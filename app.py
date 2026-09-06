@@ -43,7 +43,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# ESTADOS DA SESSÃO - LIMPEZA RIGOROSA DO CRONOGRAMA
+# ESTADOS DA SESSÃO
 vistas_validas = ["🏠 Início", "📊 Progresso e Fases", "📋 Tabela Detalhada", "📈 Indicadores Globais & Tempos"]
 
 if 'pagina_ativa' not in st.session_state or st.session_state['pagina_ativa'] not in vistas_validas:
@@ -53,6 +53,8 @@ if 'obra_sel' not in st.session_state:
     st.session_state['obra_sel'] = "Visualização Global (Todas)"
 if 'conjunto_sel' not in st.session_state:
     st.session_state['conjunto_sel'] = ""
+if 'trabalhador_sel' not in st.session_state:
+    st.session_state['trabalhador_sel'] = ""
 if 'df_raw' not in st.session_state:
     st.session_state['df_raw'] = None
 if 'df_resumo_pct' not in st.session_state:
@@ -81,7 +83,6 @@ def carregar_excel_completo(file):
         if 'Obras' in df_res_pct.columns:
             df_res_pct['ID Obra'] = df_res_pct['Obras'].astype(str).str.strip()
 
-    # Consolida abas operacionais (Fabrico, Montagem, Obra)
     dfs = []
     abas_relevantes = [s for s in excel_file.sheet_names if any(k in s.lower() for k in ['fabrico', 'montagem', 'obra'])]
     if not abas_relevantes:
@@ -138,9 +139,10 @@ with st.sidebar:
         else:
             lista_obras = ["Visualização Global (Todas)"]
 
-        # PESQUISA FLEXÍVEL
+        # PESQUISAS
         st.text_input("🔍 Pesquisar Obra (ex: HY25003 ou 25003):", key='obra_sel')
         st.text_input("📦 Pesquisar por Conjunto / Referência:", key='conjunto_sel')
+        st.text_input("👷 Pesquisar Trabalhador / Soldador:", key='trabalhador_sel')
         
         st.markdown("---")
 
@@ -200,7 +202,6 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         st.markdown("---")
         st.subheader("Escolha uma das funcionalidades abaixo para continuar a análise:")
         
-        # SÃO APENAS 3 BOTÕES (SEM CRONOGRAMA)
         c1, c2, c3 = st.columns(3)
         with c1:
             st.button("📊 Progresso e Fases", on_click=ir_para, args=("📊 Progresso e Fases",), use_container_width=True)
@@ -245,7 +246,10 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
 
     # Mapeamento de Trabalhadores
     col_trab = [c for c in df.columns if 'trabalha' in str(c).lower()]
-    df['Trabalhadores'] = df[col_trab[0]].fillna("Não Atribuído") if col_trab else "Não Atribuído"
+    if col_trab:
+        df['Trabalhadores'] = df[col_trab[0]].fillna("Não Atribuído")
+    else:
+        df['Trabalhadores'] = "Não Atribuído"
 
     # Receção de Material e Qualidade
     col_mat = [c for c in df.columns if 'material' in str(c).lower() or 'rece' in str(c).lower()]
@@ -258,7 +262,9 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     df_filtrado = df.copy()
     obra_termo = str(st.session_state['obra_sel']).strip()
     termo_conjunto = str(st.session_state['conjunto_sel']).strip()
+    trabalhador_termo = str(st.session_state['trabalhador_sel']).strip()
 
+    # Filtro por Obra
     if obra_termo and obra_termo != "Visualização Global (Todas)":
         numeros_termo = re.sub(r'\D', '', obra_termo)
         def corresponder_obra(val):
@@ -270,9 +276,15 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             
         df_filtrado = df_filtrado[df_filtrado['ID Obra'].apply(corresponder_obra)]
 
+    # Filtro por Conjunto
     if termo_conjunto:
         mask = df_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
         df_filtrado = df_filtrado[mask]
+
+    # Filtro por Trabalhador
+    if trabalhador_termo:
+        mask_trab = df_filtrado['Trabalhadores'].astype(str).str.contains(trabalhador_termo, case=False, na=False)
+        df_filtrado = df_filtrado[mask_trab]
 
     # ----------------------------------------------------
     # VISTAS DE ANÁLISE EXCLUSIVAS
@@ -282,7 +294,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     if st.session_state['pagina_ativa'] == "📊 Progresso e Fases":
         st.title("📊 Monitorização do Progresso e Fases por Obra")
         
-        if st.session_state['df_resumo_pct'] is not None:
+        if st.session_state['df_resumo_pct'] is not None and not trabalhador_termo:
             df_pct = st.session_state['df_resumo_pct'].copy()
             if obra_termo and obra_termo != "Visualização Global (Todas)":
                 numeros_t = re.sub(r'\D', '', obra_termo)
@@ -297,7 +309,6 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             cols_pct = [c for c in ['Fabrico', 'Montagem', 'Obra', 'Total executado', 'Faltando'] if c in df_pct.columns]
             
             fig_fases = go.Figure()
-            # CORES ATUALIZADAS A PEDIDO (Montagem Amarelo, Fabrico Azul, Obra Turquesa)
             if 'Fabrico' in df_pct.columns:
                 fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Fabrico']*100, name='Fabrico (%)', orientation='h', marker_color='#1976D2'))
             if 'Montagem' in df_pct.columns:
@@ -322,9 +333,15 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
                     min_value=0,
                     max_value=100 if df_pct[col_p].max() > 1 else 1.0
                 )
-            st.dataframe(df_pct, column_config=config_cols, use_container_width=True)
+            
+            # ELIMINAR A COLUNA "ID Obra" DA VISUALIZAÇÃO COMO PEDIDO
+            df_pct_display = df_pct.drop(columns=['ID Obra'], errors='ignore')
+            st.dataframe(df_pct_display, column_config=config_cols, use_container_width=True)
             
         else:
+            if trabalhador_termo:
+                st.info(f"O cálculo de progresso reflete as tarefas alocadas ao colaborador: **{trabalhador_termo}**")
+            
             resumo_obras = []
             for obra, group in df_filtrado.groupby('ID Obra'):
                 if obra in ["Obra Geral", "l", "nan"]: continue
@@ -332,11 +349,11 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
                 conc = len(group[group['Estado da Obra'] == 'Obra Concluída'])
                 pct_ex = round((conc / tot) * 100, 1) if tot > 0 else 0
                 resumo_obras.append({
-                    'ID Obra': obra,
+                    'Obras': obra,
                     'Total Tarefas': tot,
                     'Concluídas': conc,
-                    'Total Executado (%)': pct_ex,
-                    'Faltando (%)': round(100 - pct_ex, 1)
+                    'Total executado': pct_ex,
+                    'Faltando': round(100 - pct_ex, 1)
                 })
             df_res = pd.DataFrame(resumo_obras)
             st.dataframe(df_res, use_container_width=True)
@@ -344,10 +361,12 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     # 2. TABELA DETALHADA
     elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
         st.title("📋 Base de Dados Detalhada de Obras")
-        st.info(f"A apresentar **{len(df_filtrado)}** linhas totais da base de dados consolidada.")
+        st.info(f"A apresentar **{len(df_filtrado)}** linhas da base de dados consolidada.")
         
         cols_ordenadas = ['ID Obra', 'Desenho_Ref', 'Fase Operacional', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade'] + [c for c in df_filtrado.columns if c not in ['ID Obra', 'Desenho_Ref', 'Fase Operacional', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade']]
-        st.dataframe(df_filtrado[cols_ordenadas], use_container_width=True)
+        
+        df_display_detalhe = df_filtrado[cols_ordenadas].drop(columns=['ID Obra'], errors='ignore')
+        st.dataframe(df_display_detalhe, use_container_width=True)
 
     # 3. INDICADORES GLOBAIS & TEMPOS DE EXECUÇÃO
     elif st.session_state['pagina_ativa'] == "📈 Indicadores Globais & Tempos":
@@ -365,18 +384,16 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         st.markdown("---")
         st.subheader("⏱️ Tempos de Execução das Obras (Planeado vs Realizado)")
         
-        # AGORA LÊ DE TODA A BASE DE DADOS CONSOLIDADA E NÃO APENAS DA ABA OBRA
         cols_tempos = [c for c in df_filtrado.columns if any(k in str(c).lower() for k in ['desenho_ref', 'situação', 'estado', 'tempo', 'data', 'trabalhad', 'fase'])]
         
         df_exibicao_tempos = df_filtrado[cols_tempos].copy()
         
-        # Limpar linhas onde o tempo e datas estão totalmente vazios para a vista ficar limpa
         col_t_est = [c for c in cols_tempos if 'tempo est' in str(c).lower()]
         col_d_ini = [c for c in cols_tempos if 'inicio' in str(c).lower() or 'início' in str(c).lower()]
         
         if col_t_est and col_d_ini:
             df_exibicao_tempos = df_exibicao_tempos.dropna(subset=[col_t_est[0], col_d_ini[0]], how='all')
 
-        st.info(f"A apresentar os prazos de **todas as fases (Fabrico, Montagem, Obra)**, correspondendo a **{len(df_exibicao_tempos)}** registos de tarefas associadas à obra selecionada.")
+        st.info(f"A apresentar os prazos correspondentes a **{len(df_exibicao_tempos)}** tarefas filtradas.")
         
         st.dataframe(df_exibicao_tempos, use_container_width=True)
