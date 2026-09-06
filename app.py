@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import re
 
 st.set_page_config(
     page_title="PRF - Portal de Gestão de Obras", 
@@ -69,11 +70,10 @@ def ir_para(pagina):
 def voltar_ao_inicio_sem_apagar():
     st.session_state['pagina_ativa'] = "🏠 Início"
 
-# FUNÇÃO DE CARREGAMENTO DO FICHEIRO EXCEL (ABAS DE PROGRESSO, OBRA E OPERACIONAIS)
+# FUNÇÃO DE CARREGAMENTO DO FICHEIRO EXCEL
 def carregar_excel_completo(file):
     excel_file = pd.ExcelFile(file)
     
-    # 1. Carrega aba de 'Resumo %' se existir
     df_res_pct = None
     if 'Resumo %' in excel_file.sheet_names:
         df_res_pct = pd.read_excel(file, sheet_name='Resumo %')
@@ -81,13 +81,11 @@ def carregar_excel_completo(file):
         if 'Obras' in df_res_pct.columns:
             df_res_pct['ID Obra'] = df_res_pct['Obras'].astype(str).str.strip()
 
-    # 2. Carrega aba 'Obra (B)' para os Tempos de Execução
     df_tempos = None
     if 'Obra (B)' in excel_file.sheet_names:
         df_tempos = pd.read_excel(file, sheet_name='Obra (B)', header=1)
         df_tempos = df_tempos.dropna(how='all')
 
-    # 3. Consolida abas operacionais (Fabrico, Montagem, Obra)
     dfs = []
     abas_relevantes = [s for s in excel_file.sheet_names if any(k in s.lower() for k in ['fabrico', 'montagem', 'obra'])]
     if not abas_relevantes:
@@ -144,8 +142,9 @@ with st.sidebar:
         else:
             lista_obras = ["Visualização Global (Todas)"]
 
-        st.selectbox("Selecionar Obra:", lista_obras, key='obra_sel')
-        st.text_input("Pesquisar por Conjunto / Referência:", key='conjunto_sel')
+        # PESQUISA FLEXÍVEL (TEXTO OU SELEÇÃO)
+        st.text_input("🔍 Pesquisar Obra (código, apenas números ou últimos 4 dígitos):", key='obra_sel')
+        st.text_input("📦 Pesquisar por Conjunto / Referência:", key='conjunto_sel')
         
         st.markdown("---")
 
@@ -257,13 +256,28 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     col_qual = [c for c in df.columns if 'qualid' in str(c).lower()]
     df['Qualidade'] = df[col_qual[0]].fillna("Pendente") if col_qual else "Pendente"
 
-    # FILTRAGEM DINÂMICA
+    # FILTRAGEM DINÂMICA E PARCIAL DE OBRAS
     df_filtrado = df.copy()
-    obra_selecionada = st.session_state['obra_sel']
-    termo_conjunto = st.session_state['conjunto_sel']
+    obra_termo = str(st.session_state['obra_sel']).strip()
+    termo_conjunto = str(st.session_state['conjunto_sel']).strip()
 
-    if obra_selecionada != "Visualização Global (Todas)":
-        df_filtrado = df_filtrado[df_filtrado['ID Obra'] == obra_selecionada]
+    if obra_termo and obra_termo != "Visualização Global (Todas)":
+        # Extrai apenas os dígitos numéricos caso o utilizador tenha pesquisado números
+        numeros_termo = re.sub(r'\D', '', obra_termo)
+        
+        def corresponder_obra(val):
+            val_str = str(val).strip()
+            # 1. Correspondência exata ou parcial de texto
+            if obra_termo.lower() in val_str.lower():
+                return True
+            # 2. Correspondência numérica (ex: 25003 ou 5003)
+            val_num = re.sub(r'\D', '', val_str)
+            if numeros_termo and len(numeros_termo) >= 2 and numeros_termo in val_num:
+                return True
+            return False
+            
+        mask_obra = df_filtrado['ID Obra'].apply(corresponder_obra)
+        df_filtrado = df_filtrado[mask_obra]
 
     if termo_conjunto:
         mask = df_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
@@ -273,19 +287,22 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     # VISTAS DE ANÁLISE
     # ----------------------------------------------------
 
-    # 1. PROGRESSO E FASES (COM PERCENTAGEM DE CONCLUSÃO DAS TAREFAS/FASES)
+    # 1. PROGRESSO E FASES (PERCENTAGEM DE CONCLUSÃO DAS TAREFAS/FASES)
     if st.session_state['pagina_ativa'] == "📊 Progresso e Fases":
         st.title("📊 Monitorização do Progresso e Fases por Obra")
         
-        # Se existir a tabela de Resumo % no Excel, utiliza-a diretamente
         if st.session_state['df_resumo_pct'] is not None:
             df_pct = st.session_state['df_resumo_pct'].copy()
-            if obra_selecionada != "Visualização Global (Todas)":
-                df_pct = df_pct[df_pct['ID Obra'] == obra_selecionada]
+            if obra_termo and obra_termo != "Visualização Global (Todas)":
+                numeros_t = re.sub(r'\D', '', obra_termo)
+                def m_pct(v):
+                    vs = str(v).lower()
+                    vn = re.sub(r'\D', '', str(v))
+                    return (obra_termo.lower() in vs) or (numeros_t and len(numeros_t) >= 2 and numeros_t in vn)
+                df_pct = df_pct[df_pct['ID Obra'].apply(m_pct)]
                 
             st.markdown("### Percentagem de Conclusão por Fase (Fabrico / Montagem / Obra)")
             
-            # Formatação de percentagens para exibição
             cols_pct = [c for c in ['Fabrico', 'Montagem', 'Obra', 'Total executado', 'Faltando'] if c in df_pct.columns]
             
             fig_fases = go.Figure()
@@ -306,7 +323,6 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
 
             st.markdown("### Tabela Detalhada de Progresso por Fase")
             
-            # Formatação de visualização estilo tabela Excel enviada
             config_cols = {}
             for col_p in cols_pct:
                 config_cols[col_p] = st.column_config.ProgressColumn(
@@ -319,7 +335,6 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             st.dataframe(df_pct, column_config=config_cols, use_container_width=True)
             
         else:
-            # Cálculo automático caso a aba de resumo não esteja presente
             resumo_obras = []
             for obra, group in df_filtrado.groupby('ID Obra'):
                 if obra in ["Obra Geral", "l", "nan"]: continue
@@ -364,9 +379,13 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             df_t = st.session_state['df_obras_tempos'].copy()
             cols_t = [c for c in df_t.columns if any(k in str(c).lower() for k in ['desenho', 'situação', 'tempo', 'data', 'trabalhad'])]
             
-            # Filtro por obra se selecionado
-            if obra_selecionada != "Visualização Global (Todas)" and 'Desenho' in df_t.columns:
-                df_t = df_t[df_t['Desenho'].astype(str).str.contains(obra_selecionada, case=False, na=False)]
+            if obra_termo and obra_termo != "Visualização Global (Todas)" and 'Desenho' in df_t.columns:
+                num_t = re.sub(r'\D', '', obra_termo)
+                def m_t(v):
+                    vs = str(v).lower()
+                    vn = re.sub(r'\D', '', str(v))
+                    return (obra_termo.lower() in vs) or (num_t and len(num_t) >= 2 and num_t in vn)
+                df_t = df_t[df_t['Desenho'].apply(m_t)]
                 
             st.dataframe(df_t[cols_t] if cols_t else df_t, use_container_width=True)
         else:
