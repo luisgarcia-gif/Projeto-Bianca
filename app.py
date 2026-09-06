@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import os
 import re
@@ -49,7 +48,7 @@ if 'pagina_ativa' not in st.session_state or "Cronograma" in st.session_state['p
     st.session_state['pagina_ativa'] = "🏠 Início"
 
 if 'obra_sel' not in st.session_state:
-    st.session_state['obra_sel'] = ""
+    st.session_state['obra_sel'] = "Visualização Global (Todas)"
 if 'conjunto_sel' not in st.session_state:
     st.session_state['conjunto_sel'] = ""
 if 'df_raw' not in st.session_state:
@@ -132,9 +131,19 @@ with st.sidebar:
     if tem_ficheiro:
         st.subheader("🔍 Filtros de Pesquisa")
         
-        # PESQUISA FLEXÍVEL DE OBRA
-        st.text_input("🔍 Pesquisar Obra (ex: HY25003, 25003 ou 5003):", key='obra_sel')
-        st.text_input("📦 Pesquisar por Conjunto / Referência:", key='conjunto_sel')
+        df_temp = st.session_state['df_raw'].copy()
+        
+        cols_des = [c for c in df_temp.columns if any(k in str(c).lower() for k in ['desenho', 'name', 'referencia'])]
+        if cols_des:
+            col_ref = cols_des[0]
+            df_temp['ID Obra'] = df_temp[col_ref].astype(str).apply(lambda x: str(x).split('-')[0] if '-' in str(x) and str(x) != 'nan' else str(x))
+            obras_unicas = [str(x).strip() for x in df_temp['ID Obra'].unique() if str(x).strip() not in ["", "nan", "None", "l"]]
+            lista_obras = ["Visualização Global (Todas)"] + sorted(list(set(obras_unicas)))
+        else:
+            lista_obras = ["Visualização Global (Todas)"]
+
+        st.selectbox("Selecionar Obra:", lista_obras, key='obra_sel')
+        st.text_input("Pesquisar por Conjunto / Referência:", key='conjunto_sel')
         
         st.markdown("---")
 
@@ -270,7 +279,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         df_filtrado = df_filtrado[mask]
 
     # ----------------------------------------------------
-    # VISTAS DE ANÁLISE EXCLUSIVAS (SEM CRONOGRAMA)
+    # VISTAS DE ANÁLISE EXCLUSIVAS
     # ----------------------------------------------------
 
     # 1. PROGRESSO E FASES
