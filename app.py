@@ -43,8 +43,10 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# ESTADOS DA SESSÃO E LIMPEZA DE PÁGINAS OBSOLETAS
-if 'pagina_ativa' not in st.session_state or "Cronograma" in st.session_state['pagina_ativa']:
+# ESTADOS DA SESSÃO E SEGURANÇA CONTRA CACHE ANTIGA
+vistas_validas = ["🏠 Início", "📊 Progresso e Fases", "📋 Tabela Detalhada", "📈 Indicadores Globais & Tempos"]
+
+if 'pagina_ativa' not in st.session_state or st.session_state['pagina_ativa'] not in vistas_validas:
     st.session_state['pagina_ativa'] = "🏠 Início"
 
 if 'obra_sel' not in st.session_state:
@@ -204,6 +206,7 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         st.markdown("---")
         st.subheader("Escolha uma das funcionalidades abaixo para continuar a análise:")
         
+        # SÃO APENAS 3 BOTÕES AGORA (SEM CRONOGRAMA)
         c1, c2, c3 = st.columns(3)
         with c1:
             st.button("📊 Progresso e Fases", on_click=ir_para, args=("📊 Progresso e Fases",), use_container_width=True)
@@ -279,7 +282,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         df_filtrado = df_filtrado[mask]
 
     # ----------------------------------------------------
-    # VISTAS DE ANÁLISE EXCLUSIVAS
+    # VISTAS DE ANÁLISE EXCLUSIVAS (SEM GANTT)
     # ----------------------------------------------------
 
     # 1. PROGRESSO E FASES
