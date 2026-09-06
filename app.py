@@ -44,9 +44,10 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# ESTADOS DA SESSÃO
-if 'pagina_ativa' not in st.session_state:
+# ESTADOS DA SESSÃO E LIMPEZA DE PÁGINAS OBSOLETAS
+if 'pagina_ativa' not in st.session_state or "Cronograma" in st.session_state['pagina_ativa']:
     st.session_state['pagina_ativa'] = "🏠 Início"
+
 if 'obra_sel' not in st.session_state:
     st.session_state['obra_sel'] = ""
 if 'conjunto_sel' not in st.session_state:
@@ -269,7 +270,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         df_filtrado = df_filtrado[mask]
 
     # ----------------------------------------------------
-    # VISTAS DE ANÁLISE
+    # VISTAS DE ANÁLISE EXCLUSIVAS (SEM CRONOGRAMA)
     # ----------------------------------------------------
 
     # 1. PROGRESSO E FASES
