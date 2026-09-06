@@ -124,7 +124,6 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         except Exception as e:
             st.error(f"Erro ao ler o ficheiro Excel: {e}")
     else:
-        # MENAGEM DE ALERTA SOLICITADA QUANDO NÃO HÁ FICHEIRO
         st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) que pretende analisar para desbloquear a plataforma.")
 
     if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None:
@@ -163,20 +162,21 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     else:
         df['Caminho_Rede'] = ""
 
+    # REGRAS DE ESTADO COM A NOMEAÇÃO EXATA PARA A LEGENDA DO GRÁFICO
     if 'Situação' in df.columns:
         def traduzir_estado(val):
             if val is True or str(val).lower() == 'true':
-                return "Concluída"
+                return "Obra Concluída"
             elif val is False or str(val).lower() == 'false':
-                return "Em Execução"
+                return "Obra Em Execução"
             elif pd.isna(val) or str(val).strip() == "" or "iniciar" in str(val).lower():
-                return "Para Iniciar"
+                return "Obra Para Iniciar"
             elif "suspensa" in str(val).lower() or "parada" in str(val).lower():
-                return "Suspensa"
+                return "Obra Suspensa"
             return str(val)
         df['Situação'] = df['Situação'].apply(traduzir_estado)
     else:
-        df['Situação'] = "Para Iniciar"
+        df['Situação'] = "Obra Para Iniciar"
 
     df_gantt = pd.DataFrame()
     if 'Data de inicio' in df.columns and 'Data de fim' in df.columns:
@@ -215,13 +215,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     if st.session_state['pagina_ativa'] == "📊 Cronograma (Gantt)":
         st.title("📊 Cronograma Dinâmico de Obras (Gantt)")
         
-        st.markdown("""
-        **Legenda de Estados:**
-        * 🟢 **Verde**: Obra Concluída
-        * 🟡 **Amarelo**: Obra Em Execução
-        * 🔴 **Vermelho**: Obra Para Iniciar ou Suspensa
-        """)
-        
         if not df_gantt_filtrado.empty:
             fig = px.timeline(
                 df_gantt_filtrado, 
@@ -231,14 +224,18 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
                 color="Situação",
                 hover_name="Documento / Arquivo",
                 title="Cronograma de Obras Ativas e Projeção Futura",
+                # MAPA DE CORES INTEGRADO DIRETAMENTE NA LEGENDA DO GRÁFICO
                 color_discrete_map={
-                    "Concluída": "#4CAF50",
-                    "Em Execução": "#FFEB3B",
-                    "Para Iniciar": "#F44336",
-                    "Suspensa": "#D32F2F"
+                    "Obra Concluída": "#4CAF50",    # Verde
+                    "Obra Em Execução": "#FFEB3B",  # Amarelo
+                    "Obra Para Iniciar": "#F44336", # Vermelho
+                    "Obra Suspensa": "#D32F2F"     # Vermelho Escuro
                 }
             )
             fig.update_yaxes(autorange="reversed")
+            
+            # ATUALIZA O TÍTULO DA LEGENDA INTEGRADA DO PLOTLY
+            fig.update_layout(legend_title_text='Legenda de Estados:')
             
             data_maxima = df_gantt_filtrado['Data de fim'].max()
             if pd.notna(data_maxima):
