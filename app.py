@@ -110,7 +110,10 @@ def carregar_excel_completo(file):
 
 # BARRA LATERAL
 with st.sidebar:
-    if os.path.exists("logo.png"):
+    # ATUALIZAÇÃO DO LOGOTIPO PARA O NOVO FICHEIRO
+    if os.path.exists("prf_principal_gassolutions.png"):
+        st.image("prf_principal_gassolutions.png", use_column_width=True)
+    elif os.path.exists("logo.png"):
         st.image("logo.png", use_column_width=True)
     else:
         st.markdown(f"""
@@ -296,6 +299,10 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         
         if st.session_state['df_resumo_pct'] is not None and not trabalhador_termo:
             df_pct = st.session_state['df_resumo_pct'].copy()
+            
+            if 'Faltando' in df_pct.columns:
+                df_pct = df_pct.rename(columns={'Faltando': 'Em Falta'})
+                
             if obra_termo and obra_termo != "Visualização Global (Todas)":
                 numeros_t = re.sub(r'\D', '', obra_termo)
                 def m_pct(v):
@@ -306,14 +313,15 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
                 
             st.markdown("### Percentagem de Conclusão por Fase (Fabrico / Montagem / Obra)")
             
-            # Gráfico de Barras com Cores Melhoradas
+            cols_pct = [c for c in ['Fabrico', 'Montagem', 'Obra', 'Total executado', 'Em Falta'] if c in df_pct.columns]
+            
             fig_fases = go.Figure()
             if 'Fabrico' in df_pct.columns:
-                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Fabrico']*100, name='Fabrico (%)', orientation='h', marker_color='#9C27B0')) # Roxo
+                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Fabrico']*100, name='Fabrico (%)', orientation='h', marker_color='#9C27B0'))
             if 'Montagem' in df_pct.columns:
-                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Montagem']*100, name='Montagem (%)', orientation='h', marker_color='#FF9800')) # Laranja
+                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Montagem']*100, name='Montagem (%)', orientation='h', marker_color='#FF9800'))
             if 'Obra' in df_pct.columns:
-                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Obra']*100, name='Obra (%)', orientation='h', marker_color='#4CAF50')) # Verde
+                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Obra']*100, name='Obra (%)', orientation='h', marker_color='#4CAF50'))
                 
             fig_fases.update_layout(
                 barmode='group',
@@ -325,8 +333,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
 
             st.markdown("### Tabela Detalhada de Progresso por Fase")
             
-            # ELIMINA AS COLUNAS "MONTAGEM" E "OBRA" DA TABELA VISUAL
-            cols_table_pct = [c for c in ['Obras', 'Fabrico', 'Total executado', 'Faltando'] if c in df_pct.columns]
+            cols_table_pct = [c for c in ['Obras', 'Fabrico', 'Total executado', 'Em Falta'] if c in df_pct.columns]
             
             config_cols = {}
             for col_p in cols_table_pct:
@@ -356,7 +363,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
                     'Total Tarefas': tot,
                     'Concluídas': conc,
                     'Total executado': pct_ex,
-                    'Faltando': round(100 - pct_ex, 1)
+                    'Em Falta': round(100 - pct_ex, 1)
                 })
             df_res = pd.DataFrame(resumo_obras)
             st.dataframe(df_res, use_container_width=True)
