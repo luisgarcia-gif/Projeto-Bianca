@@ -65,35 +65,38 @@ def ir_para(pagina):
 def voltar_ao_inicio_sem_apagar():
     st.session_state['pagina_ativa'] = "🏠 Início"
 
-# ALGORITMO DE DETEÇÃO INTELIGENTE DE CABEÇALHO (CORRIGIDO E ROBUSTO)
-def carregar_excel_inteligente(file):
+# FUNÇÃO DE LEITURA TOTAL DAS ABAS OPERACIONAIS DO EXCEL (FABRICO, MONTAGEM, OBRA)
+def carregar_excel_todas_abas(file):
     excel_file = pd.ExcelFile(file)
-    aba_alvo = None
-    for sheet in excel_file.sheet_names:
-        if "obra" in sheet.lower():
-            aba_alvo = sheet
-            break
-    if not aba_alvo:
-        aba_alvo = excel_file.sheet_names[0]
+    dfs = []
+    
+    # Abas operacionais principais a carregar
+    abas_relevantes = [s for s in excel_file.sheet_names if any(k in s.lower() for k in ['fabrico', 'montagem', 'obra'])]
+    
+    if not abas_relevantes:
+        abas_relevantes = excel_file.sheet_names
         
-    # Lê as primeiras 25 linhas sem assumir cabeçalho
-    df_preview = pd.read_excel(file, sheet_name=aba_alvo, header=None, nrows=25)
-    
-    header_row_idx = 0
-    max_matches = 0
-    palavras_chave = ['desenho', 'situação', 'situacao', 'trabalhadores', 'obra', 'abrir', 'referencia', 'material', 'qualidade']
-    
-    for idx, row in df_preview.iterrows():
-        # Converte cada célula em texto limpo para evitar erros de tipo float
-        row_cells = [str(x).lower().strip() for x in row.values if pd.notna(x)]
-        matches = sum(1 for p in palavras_chave if any(p in cell for cell in row_cells))
-        if matches > max_matches:
-            max_matches = matches
-            header_row_idx = idx
-
-    # Carrega todo o ficheiro a partir do cabeçalho detetado
-    df_final = pd.read_excel(file, sheet_name=aba_alvo, header=header_row_idx)
-    return df_final, aba_alvo
+    for sheet in abas_relevantes:
+        # Lê prévia para detetar a linha do cabeçalho
+        df_prev = pd.read_excel(file, sheet_name=sheet, header=None, nrows=20)
+        
+        header_idx = 0
+        max_matches = 0
+        palavras_chave = ['desenho', 'desenhos', 'situação', 'situacao', 'trabalhadores', 'obra', 'referencia', 'material', 'qualidade', 'name']
+        
+        for idx, row in df_prev.iterrows():
+            row_cells = [str(x).lower().strip() for x in row.values if pd.notna(x)]
+            matches = sum(1 for p in palavras_chave if any(p in cell for cell in row_cells))
+            if matches > max_matches:
+                max_matches = matches
+                header_idx = idx
+                
+        df_sheet = pd.read_excel(file, sheet_name=sheet, header=header_idx)
+        df_sheet['Fase Operacional'] = sheet
+        dfs.append(df_sheet)
+        
+    df_consolidado = pd.concat(dfs, ignore_index=True)
+    return df_consolidado, ", ".join(abas_relevantes)
 
 # BARRA LATERAL
 with st.sidebar:
@@ -117,12 +120,13 @@ with st.sidebar:
         
         df_temp = st.session_state['df_raw'].copy()
         
-        # Procura coluna de identificação de obra
-        col_desenho = [c for c in df_temp.columns if 'desenho' in str(c).lower()]
-        if col_desenho:
-            df_temp['ID Obra'] = df_temp[col_desenho[0]].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else x)
-            obras_unicas = df_temp['ID Obra'].dropna().unique()
-            lista_obras = ["Visualização Global (Todas)"] + [str(x) for x in obras_unicas if str(x).strip() not in ["", "nan", "None"]]
+        # Identificação das Obras
+        cols_des = [c for c in df_temp.columns if any(k in str(c).lower() for k in ['desenho', 'name', 'referencia'])]
+        if cols_des:
+            col_ref = cols_des[0]
+            df_temp['ID Obra'] = df_temp[col_ref].astype(str).apply(lambda x: x.split('-')[0] if '-' in str(x) and str(x) != 'nan' else str(x))
+            obras_unicas = [str(x).strip() for x in df_temp['ID Obra'].unique() if str(x).strip() not in ["", "nan", "None", "l"]]
+            lista_obras = ["Visualização Global (Todas)"] + sorted(list(set(obras_unicas)))
         else:
             lista_obras = ["Visualização Global (Todas)"]
 
@@ -146,7 +150,7 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
     
     if ficheiro_carregado is not None:
         try:
-            new_df, aba_alvo = carregar_excel_inteligente(ficheiro_carregado)
+            new_df, abas_lidas = carregar_excel_todas_abas(ficheiro_carregado)
             new_name = ficheiro_carregado.name
             
             if st.session_state['df_raw'] is not None and st.session_state['nome_ficheiro'] != new_name:
@@ -183,7 +187,7 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
     if st.session_state['df_raw'] is None:
         st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) para desbloquear a plataforma.")
     else:
-        st.info(f"📁 **Ficheiro ativo:** {st.session_state['nome_ficheiro']} | **Total de Linhas Carregadas:** {len(st.session_state['df_raw'])} registos")
+        st.info(f"📁 **Ficheiro ativo:** {st.session_state['nome_ficheiro']} | **Total de Registos Consolidados:** {len(st.session_state['df_raw'])} linhas")
         st.markdown("---")
         st.subheader("Escolha uma das funcionalidades abaixo para continuar a análise:")
         
@@ -197,24 +201,23 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         with c4:
             st.button("📅 Cronograma (Gantt)", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
 
-# PROCESSAMENTO DOS DADOS PARA ANÁLISE
+# PROCESSAMENTO DOS DADOS PARSEADOS
 if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
     
-    # Remover apenas colunas de sistema sem descartar linhas de dados
-    colunas_eliminar = ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Abrir']
+    colunas_eliminar = ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Abrir', 'nom2', 'Personalizado']
     df = df.drop(columns=[col for col in colunas_eliminar if col in df.columns], errors='ignore')
 
-    # Identificação da Coluna do Desenho/Obra
-    col_desenho = [c for c in df.columns if 'desenho' in str(c).lower()]
+    # Mapeamento do ID Obra
+    col_desenho = [c for c in df.columns if any(k in str(c).lower() for k in ['desenho', 'desenhos', 'name', 'referencia'])]
     if col_desenho:
-        df['ID Obra'] = df[col_desenho[0]].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else (x if x != 'nan' else "Obra Geral"))
+        df['ID Obra'] = df[col_desenho[0]].astype(str).apply(lambda x: x.split('-')[0] if '-' in str(x) and str(x) != 'nan' else (str(x) if str(x) != 'nan' else "Obra Geral"))
     else:
         df['ID Obra'] = "Obra Geral"
 
-    df['ID Obra'] = df['ID Obra'].fillna("Obra Geral").astype(str)
+    df['ID Obra'] = df['ID Obra'].replace(['nan', 'None', 'l'], 'Obra Geral').fillna("Obra Geral")
 
-    # Identificação da Coluna Situação
+    # Mapeamento de Situação / Estado
     col_sit = [c for c in df.columns if 'situa' in str(c).lower()]
     if col_sit:
         def traduzir_estado(val):
@@ -230,16 +233,13 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     else:
         df['Estado da Obra'] = "Para Iniciar"
 
-    # Identificação dos Trabalhadores
+    # Mapeamento Trabalhadores
     col_trab = [c for c in df.columns if 'trabalha' in str(c).lower()]
-    if col_trab:
-        df['Trabalhadores'] = df[col_trab[0]].fillna("Não Atribuído")
-    else:
-        df['Trabalhadores'] = "Não Atribuído"
+    df['Trabalhadores'] = df[col_trab[0]].fillna("Não Atribuído") if col_trab else "Não Atribuído"
 
-    # Receção de Material e Qualidade
+    # Mapeamento Material e Qualidade
     col_mat = [c for c in df.columns if 'material' in str(c).lower() or 'rece' in str(c).lower()]
-    df['Receção Material'] = df[col_mat[0]].fillna("Pendente") if col_mat else "Sem informação"
+    df['Receção Material'] = df[col_mat[0]].fillna("Sem informação") if col_mat else "Sem informação"
 
     col_qual = [c for c in df.columns if 'qualid' in str(c).lower()]
     df['Qualidade'] = df[col_qual[0]].fillna("Pendente") if col_qual else "Pendente"
@@ -256,9 +256,11 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         mask = df_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
         df_filtrado = df_filtrado[mask]
 
-    # CÁLCULO DE PROGRESSO POR OBRA
+    # PROGRESSO POR OBRA (CONSIDERANDO AS >3000 LINHAS CONSOLIDADAS)
     resumo_obras = []
     for obra, group in df_filtrado.groupby('ID Obra'):
+        if obra in ["Obra Geral", "l", "nan"]:
+            continue
         total_linhas = len(group)
         concluidas = len(group[group['Estado da Obra'] == 'Obra Concluída'])
         pct_executado = round((concluidas / total_linhas) * 100, 1) if total_linhas > 0 else 0
@@ -273,14 +275,12 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         })
     df_resumo = pd.DataFrame(resumo_obras)
 
-    # ----------------------------------------------------
     # VISTAS DE ANÁLISE
-    # ----------------------------------------------------
 
     # 1. PROGRESSO E FASES
     if st.session_state['pagina_ativa'] == "📊 Progresso e Fases":
         st.title("📊 Monitorização do Progresso Executado por Obra")
-        st.markdown(f"Exibindo **{len(df_filtrado)}** registos divididos por **{len(df_resumo)}** obras.")
+        st.markdown(f"Exibindo **{len(df_filtrado)}** registos consolidados divididos por **{len(df_resumo)}** obras.")
         
         if not df_resumo.empty:
             fig_bar = go.Figure()
@@ -336,9 +336,9 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     # 2. TABELA DETALHADA
     elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
         st.title("📋 Base de Dados Detalhada de Obras")
-        st.info(f"A apresentar **{len(df_filtrado)}** linhas totais da base de dados.")
+        st.info(f"A apresentar **{len(df_filtrado)}** linhas totais da base de dados consolidada.")
         
-        cols_ordenadas = ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade'] + [c for c in df_filtrado.columns if c not in ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade']]
+        cols_ordenadas = ['ID Obra', 'Fase Operacional', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade'] + [c for c in df_filtrado.columns if c not in ['ID Obra', 'Fase Operacional', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade']]
         st.dataframe(df_filtrado[cols_ordenadas], use_container_width=True)
 
     # 3. PONTO DE SITUAÇÃO
