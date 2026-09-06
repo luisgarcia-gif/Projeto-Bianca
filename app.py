@@ -123,6 +123,9 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
             st.success(f"✅ Ficheiro '{ficheiro_carregado.name}' (Aba: '{aba_alvo}') carregado com sucesso!")
         except Exception as e:
             st.error(f"Erro ao ler o ficheiro Excel: {e}")
+    else:
+        # MENAGEM DE ALERTA SOLICITADA QUANDO NÃO HÁ FICHEIRO
+        st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) que pretende analisar para desbloquear a plataforma.")
 
     if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None:
         st.info(f"📁 Ficheiro ativo: **{st.session_state.get('nome_ficheiro', 'Base de Dados')}**")
@@ -160,7 +163,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     else:
         df['Caminho_Rede'] = ""
 
-    # REGRAS DE ESTADO/SITUAÇÃO COM AS CORES SOLICITADAS
     if 'Situação' in df.columns:
         def traduzir_estado(val):
             if val is True or str(val).lower() == 'true':
@@ -213,7 +215,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     if st.session_state['pagina_ativa'] == "📊 Cronograma (Gantt)":
         st.title("📊 Cronograma Dinâmico de Obras (Gantt)")
         
-        # LEGENDA EXPLICATIVA DAS CORES
         st.markdown("""
         **Legenda de Estados:**
         * 🟢 **Verde**: Obra Concluída
@@ -230,20 +231,17 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
                 color="Situação",
                 hover_name="Documento / Arquivo",
                 title="Cronograma de Obras Ativas e Projeção Futura",
-                # MAPA DE CORES ESPECÍFICO
                 color_discrete_map={
-                    "Concluída": "#4CAF50",    # Verde
-                    "Em Execução": "#FFEB3B",  # Amarelo
-                    "Para Iniciar": "#F44336", # Vermelho
-                    "Suspensa": "#D32F2F"     # Vermelho Escuro
+                    "Concluída": "#4CAF50",
+                    "Em Execução": "#FFEB3B",
+                    "Para Iniciar": "#F44336",
+                    "Suspensa": "#D32F2F"
                 }
             )
             fig.update_yaxes(autorange="reversed")
             
-            # EXPANDIR A VISÃO FUTURA DO CRONOGRAMA
             data_maxima = df_gantt_filtrado['Data de fim'].max()
             if pd.notna(data_maxima):
-                # Extenso a visão temporal em +6 meses para além do prazo máximo da maior obra
                 limite_futuro = data_maxima + pd.DateOffset(months=6)
                 fig.update_xaxes(range=[df_gantt_filtrado['Data de inicio'].min(), limite_futuro])
                 
@@ -254,7 +252,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
         st.title("📋 Base de Dados Detalhada")
         
-        # GERA O LINK DE ABERTURA DIRETA NA TABELA
         def gerar_link_abrir(caminho):
             if pd.notna(caminho) and str(caminho).strip() != "":
                 cam_limpo = str(caminho).replace('\\', '/')
