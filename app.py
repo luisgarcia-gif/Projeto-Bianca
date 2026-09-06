@@ -42,20 +42,26 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# INICIALIZAÇÃO DE ESTADOS
+# INICIALIZAÇÃO DE ESTADOS DA SESSÃO (PERSISTENTES)
 if 'pagina_ativa' not in st.session_state:
     st.session_state['pagina_ativa'] = "🏠 Início"
 if 'obra_sel' not in st.session_state:
     st.session_state['obra_sel'] = "Visualização Global (Todas)"
 if 'conjunto_sel' not in st.session_state:
     st.session_state['conjunto_sel'] = ""
+if 'df_raw' not in st.session_state:
+    st.session_state['df_raw'] = None
+if 'nome_ficheiro' not in st.session_state:
+    st.session_state['nome_ficheiro'] = ""
+if 'temp_new_df' not in st.session_state:
+    st.session_state['temp_new_df'] = None
+if 'temp_new_name' not in st.session_state:
+    st.session_state['temp_new_name'] = ""
 
 def ir_para(pagina):
     st.session_state['pagina_ativa'] = pagina
 
-def reset_e_inicio():
-    st.session_state['obra_sel'] = "Visualização Global (Todas)"
-    st.session_state['conjunto_sel'] = ""
+def voltar_ao_inicio_sem_apagar():
     st.session_state['pagina_ativa'] = "🏠 Início"
 
 # ----------------------------------------------------
@@ -72,10 +78,11 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
     
-    st.button("🏠 Voltar ao Início", on_click=reset_e_inicio, use_container_width=True)
+    # Botão de retorno mantendo os dados salvos em memória
+    st.button("🏠 Voltar ao Início", on_click=voltar_ao_inicio_sem_apagar, use_container_width=True)
     st.markdown("---")
 
-    tem_ficheiro = 'df_raw' in st.session_state and st.session_state['df_raw'] is not None
+    tem_ficheiro = st.session_state['df_raw'] is not None
 
     if tem_ficheiro:
         st.subheader("🔍 Filtros de Pesquisa")
@@ -104,12 +111,12 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
     st.title("Portal de Gestão de Obras e Conjuntos")
     st.markdown("### Monitorização em Tempo Real")
     
-    ficheiro_carregado = st.file_uploader("Carregar Ficheiro de Obras (Qualquer nome .xlsx / .xls)", type=["xlsx", "xls"])
+    ficheiro_carregado = st.file_uploader("Carregar Ficheiro de Obras (Qualquer nome .xlsx / .xls)", type=["xlsx", "xls"], key="uploader_input")
     
+    # PROCESSAMENTO E LÓGICA DE DECISÃO DE NOVO UPLOAD
     if ficheiro_carregado is not None:
         try:
             excel_file = pd.ExcelFile(ficheiro_carregado)
-            
             aba_alvo = None
             for sheet in excel_file.sheet_names:
                 if "obra" in sheet.lower():
@@ -118,18 +125,51 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
             if not aba_alvo:
                 aba_alvo = excel_file.sheet_names[0]
                 
-            st.session_state['df_raw'] = pd.read_excel(ficheiro_carregado, sheet_name=aba_alvo, header=1)
-            st.session_state['nome_ficheiro'] = ficheiro_carregado.name
-            st.success(f"✅ Ficheiro '{ficheiro_carregado.name}' (Aba: '{aba_alvo}') carregado com sucesso!")
+            new_df = pd.read_excel(ficheiro_carregado, sheet_name=aba_alvo, header=1)
+            new_name = ficheiro_carregado.name
+            
+            # Se já existia um ficheiro ativo e o nome for diferente, pede confirmação
+            if st.session_state['df_raw'] is not None and st.session_state['nome_ficheiro'] != new_name:
+                st.session_state['temp_new_df'] = new_df
+                st.session_state['temp_new_name'] = new_name
+            else:
+                # Primeiro carregamento ou mesmo ficheiro
+                st.session_state['df_raw'] = new_df
+                st.session_state['nome_ficheiro'] = new_name
+                st.session_state['temp_new_df'] = None
         except Exception as e:
             st.error(f"Erro ao ler o ficheiro Excel: {e}")
-    else:
-        st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) que pretende analisar para desbloquear a plataforma.")
 
-    if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None:
-        st.info(f"📁 Ficheiro ativo: **{st.session_state.get('nome_ficheiro', 'Base de Dados')}**")
+    # PERGUNTA DE DECISÃO SE HOUVER NOVO FICHEIRO DETETADO
+    if st.session_state['temp_new_df'] is not None:
+        st.warning("⚠️ **Novo ficheiro detetado!**")
+        st.subheader("Deseja comparar/anexar o ficheiro atual com o novo?")
+        
+        col_sim, col_nao = st.columns(2)
+        
+        with col_sim:
+            if st.button("✅ Sim (Anexar/Comparar Ficheiros)", use_container_width=True):
+                st.session_state['df_raw'] = pd.concat([st.session_state['df_raw'], st.session_state['temp_new_df']], ignore_index=True)
+                st.session_state['nome_ficheiro'] += f" + {st.session_state['temp_new_name']}"
+                st.session_state['temp_new_df'] = None
+                st.success("Ficheiros anexados com sucesso!")
+                st.rerun()
+                
+        with col_nao:
+            if st.button("❌ Não (Substituir pelo Novo)", use_container_width=True):
+                st.session_state['df_raw'] = st.session_state['temp_new_df']
+                st.session_state['nome_ficheiro'] = st.session_state['temp_new_name']
+                st.session_state['temp_new_df'] = None
+                st.success("Base de dados substituída com sucesso!")
+                st.rerun()
+
+    # MENSAGEM DE ALERTA OU FICHEIRO ATIVO
+    if st.session_state['df_raw'] is None:
+        st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) que pretende analisar para desbloquear a plataforma.")
+    else:
+        st.info(f"📁 **Ficheiro ativo na memória:** {st.session_state['nome_ficheiro']}")
         st.markdown("---")
-        st.subheader("Escolha uma das funcionalidades abaixo para começar:")
+        st.subheader("Escolha uma das funcionalidades abaixo para continuar a análise:")
         
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -140,9 +180,9 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
             st.button("📈 Abrir Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
 # ----------------------------------------------------
-# PROCESSAMENTO DOS DADOS
+# PROCESSAMENTO DOS DADOS PARA AS PÁGINAS DE ANÁLISE
 # ----------------------------------------------------
-if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
+if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
     df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
     
@@ -162,7 +202,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     else:
         df['Caminho_Rede'] = ""
 
-    # REGRAS DE ESTADO COM A NOMEAÇÃO EXATA PARA A LEGENDA DO GRÁFICO
     if 'Situação' in df.columns:
         def traduzir_estado(val):
             if val is True or str(val).lower() == 'true':
@@ -224,7 +263,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
                 color="Situação",
                 hover_name="Documento / Arquivo",
                 title="Cronograma de Obras Ativas e Projeção Futura",
-                # MAPA DE CORES INTEGRADO DIRETAMENTE NA LEGENDA DO GRÁFICO
                 color_discrete_map={
                     "Obra Concluída": "#4CAF50",    # Verde
                     "Obra Em Execução": "#FFEB3B",  # Amarelo
@@ -233,8 +271,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
                 }
             )
             fig.update_yaxes(autorange="reversed")
-            
-            # ATUALIZA O TÍTULO DA LEGENDA INTEGRADA DO PLOTLY
             fig.update_layout(legend_title_text='Legenda de Estados:')
             
             data_maxima = df_gantt_filtrado['Data de fim'].max()
