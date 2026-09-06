@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+import base64
 
 st.set_page_config(
     page_title="PRF - Portal de Gestão de Obras", 
@@ -58,8 +59,14 @@ def reset_e_inicio():
     st.session_state['conjunto_sel'] = ""
     st.session_state['pagina_ativa'] = "🏠 Início"
 
+# FUNÇÃO PARA EXIBIR PDF EMBUTIDO NA APP
+def mostrar_pdf(file_bytes):
+    base64_pdf = base64.b64encode(file_bytes).decode('utf-8')
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
+    st.markdown(pdf_display, unsafe_allow_html=True)
+
 # ----------------------------------------------------
-# BARRA LATERAL (LOGO + FILTROS + NAVEGAÇÃO)
+# BARRA LATERAL
 # ----------------------------------------------------
 with st.sidebar:
     if os.path.exists("logo.png"):
@@ -78,7 +85,6 @@ with st.sidebar:
     tem_ficheiro = 'df_raw' in st.session_state and st.session_state['df_raw'] is not None
 
     if tem_ficheiro:
-        # 3. FILTROS PERMANENTES NA BARRA LATERAL
         st.subheader("🔍 Filtros de Pesquisa")
         
         df_temp = st.session_state['df_raw'].copy()
@@ -95,7 +101,7 @@ with st.sidebar:
 
         st.subheader("Navegação")
         st.button("📊 Cronograma (Gantt)", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
-        st.button("📋 Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
+        st.button("📋 Tabela & Desenhos", on_click=ir_para, args=("📋 Tabela & Desenhos",), use_container_width=True)
         st.button("📈 Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
 # ----------------------------------------------------
@@ -103,16 +109,30 @@ with st.sidebar:
 # ----------------------------------------------------
 if st.session_state['pagina_ativa'] == "🏠 Início":
     st.title("Portal de Gestão de Obras e Conjuntos")
-    st.markdown("### Bem-vindo à plataforma de monitorização em tempo real")
+    st.markdown("### Monitorização em Tempo Real")
     
-    ficheiro_carregado = st.file_uploader("Carregar Base de Dados (teste.xlsx)", type=["xlsx"])
+    ficheiro_carregado = st.file_uploader("Carregar Ficheiro de Obras (Qualquer nome .xlsx / .xls)", type=["xlsx", "xls"])
     
     if ficheiro_carregado is not None:
-        st.session_state['df_raw'] = pd.read_excel(ficheiro_carregado, sheet_name="Obra (B)", header=1)
-        st.success("✅ Base de dados carregada com sucesso!")
+        try:
+            excel_file = pd.ExcelFile(ficheiro_carregado)
+            
+            aba_alvo = None
+            for sheet in excel_file.sheet_names:
+                if "obra" in sheet.lower():
+                    aba_alvo = sheet
+                    break
+            if not aba_alvo:
+                aba_alvo = excel_file.sheet_names[0]
+                
+            st.session_state['df_raw'] = pd.read_excel(ficheiro_carregado, sheet_name=aba_alvo, header=1)
+            st.session_state['nome_ficheiro'] = ficheiro_carregado.name
+            st.success(f"✅ Ficheiro '{ficheiro_carregado.name}' (Aba: '{aba_alvo}') carregado com sucesso!")
+        except Exception as e:
+            st.error(f"Erro ao ler o ficheiro Excel: {e}")
 
-    # 1 e 2. BOTÕES PERMANENTES QUANDO O FICHEIRO JÁ FOI CARREGADO
     if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None:
+        st.info(f"📁 Ficheiro ativo: **{st.session_state.get('nome_ficheiro', 'Base de Dados')}**")
         st.markdown("---")
         st.subheader("Escolha uma das funcionalidades abaixo para começar:")
         
@@ -120,12 +140,12 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         with c1:
             st.button("📊 Abrir Cronograma de Gantt", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
         with c2:
-            st.button("📋 Abrir Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
+            st.button("📋 Abrir Tabela & Desenhos", on_click=ir_para, args=("📋 Tabela & Desenhos",), use_container_width=True)
         with c3:
             st.button("📈 Abrir Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
 # ----------------------------------------------------
-# PROCESSAMENTO DOS DADOS PARA AS PÁGINAS DE ANÁLISE
+# PROCESSAMENTO DOS DADOS
 # ----------------------------------------------------
 if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
@@ -138,13 +158,14 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     df = df.rename(columns=colunas_renomear)
     
     if 'Unnamed: 1' in df.columns:
-        df_caminhos = df['Unnamed: 1']
+        df['Caminho_Rede'] = df['Unnamed: 1']
         df = df.drop(columns=['Unnamed: 1'])
     elif 'Caminho do Diretório' in df.columns:
-        df_caminhos = df['Caminho do Diretório']
-        df = df.drop(columns=['Caminho do Diretório'])
+        df['Caminho_Rede'] = df['Caminho do Diretório']
+        if 'Caminho do Diretório' in df.columns and 'Caminho_Rede' != 'Caminho do Diretório':
+            df = df.drop(columns=['Caminho do Diretório'])
     else:
-        df_caminhos = pd.Series([""] * len(df))
+        df['Caminho_Rede'] = ""
 
     if 'Situação' in df.columns:
         def traduzir_estado(val):
@@ -159,15 +180,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     else:
         df['Situação'] = "Não Definido"
 
-    def criar_link_abrir(caminho, arq):
-        if pd.notna(caminho) and str(caminho).strip() != "":
-            return f"file:///{str(caminho).replace('\\', '/')}"
-        elif pd.notna(arq) and str(arq).strip() != "":
-            return f"file:///{str(arq)}"
-        return None
-
-    df['Abrir'] = [criar_link_abrir(cam, arq) for cam, arq in zip(df_caminhos, df.get('Documento / Arquivo', ['']*len(df)))]
-
     df_gantt = pd.DataFrame()
     if 'Data de inicio' in df.columns and 'Data de fim' in df.columns:
         df['Data de inicio'] = pd.to_datetime(df['Data de inicio'], errors='coerce')
@@ -180,7 +192,7 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
             
         df_gantt = df.dropna(subset=['Data de inicio', 'Data de fim'])
 
-    # APLICAÇÃO DOS FILTROS DA BARRA LATERAL
+    # FILTRAGEM
     df_filtrado = df.copy()
     df_gantt_filtrado = df_gantt.copy()
 
@@ -200,7 +212,7 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
             df_gantt_filtrado = df_gantt_filtrado[mask_gantt]
 
     # ----------------------------------------------------
-    # VISTAS SELECIONADAS
+    # VISTAS DE ANÁLISE
     # ----------------------------------------------------
     if st.session_state['pagina_ativa'] == "📊 Cronograma (Gantt)":
         st.title("📊 Cronograma Dinâmico de Obras (Gantt)")
@@ -225,18 +237,43 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
         else:
             st.warning("Nenhum registo com datas válidas encontrado para os filtros selecionados.")
 
-    elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
-        st.title("📋 Base de Dados Detalhada")
-        st.dataframe(
-            df_filtrado,
-            column_config={
-                "Abrir": st.column_config.LinkColumn(
-                    "Abrir",
-                    display_text="📁 Abrir Desenho"
-                )
-            },
-            use_container_width=True
-        )
+    elif st.session_state['pagina_ativa'] == "📋 Tabela & Desenhos":
+        st.title("📋 Base de Dados & Visualizador de Desenhos")
+        
+        col_tabela, col_viewer = st.columns([1.2, 1])
+        
+        with col_tabela:
+            st.subheader("Base de Dados Detalhada")
+            st.dataframe(df_filtrado, use_container_width=True, height=500)
+            
+        with col_viewer:
+            st.subheader("📐 Visualizador Direto de Desenho")
+            
+            # Lista de desenhos para seleção
+            if 'Desenho' in df_filtrado.columns:
+                lista_desenhos = df_filtrado['Desenho'].dropna().unique().tolist()
+                desenho_sel = st.selectbox("Selecionar Desenho/Documento para Visualizar:", ["Selecione um registo..."] + lista_desenhos)
+            else:
+                desenho_sel = "Selecione um registo..."
+            
+            # Anexo e Visualizador Integrado
+            ficheiro_desenho = st.file_uploader("Ou carregue/abra o PDF do desenho diretamente aqui:", type=["pdf", "png", "jpg", "jpeg"])
+            
+            if ficheiro_desenho is not None:
+                if ficheiro_desenho.type == "application/pdf":
+                    mostrar_pdf(ficheiro_desenho.read())
+                else:
+                    st.image(ficheiro_desenho, caption=ficheiro_desenho.name, use_column_width=True)
+            elif desenho_sel != "Selecione um registo...":
+                # Verifica se existe ficheiro local no servidor (se aplicável)
+                linha_desenho = df_filtrado[df_filtrado['Desenho'] == desenho_sel]
+                caminho_potencial = str(linha_desenho['Caminho_Rede'].values[0]) if 'Caminho_Rede' in linha_desenho.columns else ""
+                
+                if os.path.exists(caminho_potencial) and caminho_potencial.lower().endswith(".pdf"):
+                    with open(caminho_potencial, "rb") as f:
+                        mostrar_pdf(f.read())
+                else:
+                    st.info(f"ℹ️ A visualizar o registo: **{desenho_sel}**\n\nCarregue o ficheiro `.pdf` correspondente acima para o visualizar diretamente na app.")
 
     elif st.session_state['pagina_ativa'] == "📈 Ponto de Situação":
         st.title("📈 Indicadores e Ponto de Situação")
