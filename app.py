@@ -43,7 +43,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# ESTADOS DA SESSÃO E SEGURANÇA DE ROTAS
+# ESTADOS DA SESSÃO
 vistas_validas = ["🏠 Início", "📊 Progresso e Fases", "📋 Tabela Detalhada", "📈 Indicadores Globais & Tempos"]
 
 if 'pagina_ativa' not in st.session_state or st.session_state['pagina_ativa'] not in vistas_validas:
@@ -82,6 +82,10 @@ def carregar_excel_completo(file):
         df_res_pct = df_res_pct.dropna(how='all').dropna(axis=1, how='all')
         if 'Obras' in df_res_pct.columns:
             df_res_pct['ID Obra'] = df_res_pct['Obras'].astype(str).str.strip()
+            
+        # RENOMEAR COLUNA "Faltando" para "Em Falta" DIRETAMENTE NO CARREGAMENTO
+        if 'Faltando' in df_res_pct.columns:
+            df_res_pct = df_res_pct.rename(columns={'Faltando': 'Em Falta'})
 
     dfs = []
     abas_relevantes = [s for s in excel_file.sheet_names if any(k in s.lower() for k in ['fabrico', 'montagem', 'obra'])]
@@ -110,11 +114,13 @@ def carregar_excel_completo(file):
 
 # BARRA LATERAL
 with st.sidebar:
-    # ATUALIZAÇÃO DO LOGOTIPO PARA O NOVO FICHEIRO
-    if os.path.exists("prf_principal_gassolutions.png"):
-        st.image("prf_principal_gassolutions.png", use_column_width=True)
+    # ATUALIZAÇÃO DO LOGOTIPO PARA A IMAGEM 2
+    if os.path.exists("prf_principal_gassolutions_2.png"):
+        st.image("prf_principal_gassolutions_2.png", use_container_width=True)
+    elif os.path.exists("prf_principal_gassolutions.png"):
+        st.image("prf_principal_gassolutions.png", use_container_width=True)
     elif os.path.exists("logo.png"):
-        st.image("logo.png", use_column_width=True)
+        st.image("logo.png", use_container_width=True)
     else:
         st.markdown(f"""
             <div style="background-color:{PRF_TURQUOISE}; padding:15px; border-radius:10px; text-align:center;">
@@ -142,8 +148,7 @@ with st.sidebar:
         else:
             lista_obras = ["Visualização Global (Todas)"]
 
-        # PESQUISAS
-        st.text_input("🔍 Pesquisar Obra (ex: HY25003 ou 25003):", key='obra_sel')
+        st.selectbox("Selecionar Obra:", lista_obras, key='obra_sel')
         st.text_input("📦 Pesquisar por Conjunto / Referência:", key='conjunto_sel')
         st.text_input("👷 Pesquisar Trabalhador / Soldador:", key='trabalhador_sel')
         
@@ -261,13 +266,12 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     col_qual = [c for c in df.columns if 'qualid' in str(c).lower()]
     df['Qualidade'] = df[col_qual[0]].fillna("Pendente") if col_qual else "Pendente"
 
-    # FILTRAGEM DINÂMICA
+    # FILTRAGEM DINÂMICA E PARCIAL DE OBRAS
     df_filtrado = df.copy()
     obra_termo = str(st.session_state['obra_sel']).strip()
     termo_conjunto = str(st.session_state['conjunto_sel']).strip()
     trabalhador_termo = str(st.session_state['trabalhador_sel']).strip()
 
-    # Filtro por Obra
     if obra_termo and obra_termo != "Visualização Global (Todas)":
         numeros_termo = re.sub(r'\D', '', obra_termo)
         def corresponder_obra(val):
@@ -279,12 +283,10 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             
         df_filtrado = df_filtrado[df_filtrado['ID Obra'].apply(corresponder_obra)]
 
-    # Filtro por Conjunto
     if termo_conjunto:
         mask = df_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
         df_filtrado = df_filtrado[mask]
 
-    # Filtro por Trabalhador
     if trabalhador_termo:
         mask_trab = df_filtrado['Trabalhadores'].astype(str).str.contains(trabalhador_termo, case=False, na=False)
         df_filtrado = df_filtrado[mask_trab]
@@ -300,9 +302,6 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         if st.session_state['df_resumo_pct'] is not None and not trabalhador_termo:
             df_pct = st.session_state['df_resumo_pct'].copy()
             
-            if 'Faltando' in df_pct.columns:
-                df_pct = df_pct.rename(columns={'Faltando': 'Em Falta'})
-                
             if obra_termo and obra_termo != "Visualização Global (Todas)":
                 numeros_t = re.sub(r'\D', '', obra_termo)
                 def m_pct(v):
