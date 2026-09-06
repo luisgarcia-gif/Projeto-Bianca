@@ -65,6 +65,28 @@ def ir_para(pagina):
 def voltar_ao_inicio_sem_apagar():
     st.session_state['pagina_ativa'] = "🏠 Início"
 
+# FUNÇÃO ROBUSTA PARA LER TODAS AS LINHAS DO EXCEL SEM PERDAS
+def carregar_excel_completo(file):
+    excel_file = pd.ExcelFile(file)
+    aba_alvo = None
+    for sheet in excel_file.sheet_names:
+        if "obra" in sheet.lower():
+            aba_alvo = sheet
+            break
+    if not aba_alvo:
+        aba_alvo = excel_file.sheet_names[0]
+        
+    # Tenta ler com header na linha 0 (padrão)
+    df_temp = pd.read_excel(file, sheet_name=aba_alvo, header=0)
+    
+    # Se a primeira linha estiver maioritariamente vazia ou for título decorativo, tenta ler com header=1
+    if df_temp.columns.str.contains('Unnamed').sum() > len(df_temp.columns) / 2 and len(df_temp) > 0:
+        df_alt = pd.read_excel(file, sheet_name=aba_alvo, header=1)
+        if len(df_alt) > len(df_temp):
+            df_temp = df_alt
+
+    return df_temp, aba_alvo
+
 # BARRA LATERAL
 with st.sidebar:
     if os.path.exists("logo.png"):
@@ -87,15 +109,19 @@ with st.sidebar:
         
         df_temp = st.session_state['df_raw'].copy()
         
-        # Identificação de ID de Obra sem perder registos
-        if 'ID Obra' in df_temp.columns:
-            lista_obras = ["Visualização Global (Todas)"] + [str(x) for x in df_temp['ID Obra'].dropna().unique() if str(x).strip() != ""]
-        elif 'Desenho' in df_temp.columns:
-            df_temp['ID Obra'] = df_temp['Desenho'].astype(str).apply(lambda x: x.split('-')[0] if '-' in x else x)
-            lista_obras = ["Visualização Global (Todas)"] + [str(x) for x in df_temp['ID Obra'].dropna().unique() if str(x).strip() != ""]
-        elif 'Referencia' in df_temp.columns:
-            df_temp['ID Obra'] = df_temp['Referencia'].astype(str)
-            lista_obras = ["Visualização Global (Todas)"] + [str(x) for x in df_temp['ID Obra'].dropna().unique() if str(x).strip() != ""]
+        # Procura coluna de identificação de obra
+        col_obra_nome = None
+        for col in ['ID Obra', 'Desenho', 'Referencia', 'Obra']:
+            if col in df_temp.columns:
+                col_obra_nome = col
+                break
+                
+        if col_obra_nome:
+            if col_obra_nome == 'Desenho':
+                obras_unicas = df_temp[col_obra_nome].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else x).dropna().unique()
+            else:
+                obras_unicas = df_temp[col_obra_nome].astype(str).dropna().unique()
+            lista_obras = ["Visualização Global (Todas)"] + [str(x) for x in obras_unicas if str(x).strip() != "" and str(x).strip() != "nan"]
         else:
             lista_obras = ["Visualização Global (Todas)"]
 
@@ -106,9 +132,9 @@ with st.sidebar:
 
         st.subheader("Navegação")
         st.button("📊 Progresso e Fases", on_click=ir_para, args=("📊 Progresso e Fases",), use_container_width=True)
-        st.button("📅 Cronograma (Gantt)", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
         st.button("📋 Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
         st.button("📈 Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
+        st.button("📅 Cronograma (Gantt)", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
 
 # 🏠 PÁGINA INICIAL
 if st.session_state['pagina_ativa'] == "🏠 Início":
@@ -119,16 +145,7 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
     
     if ficheiro_carregado is not None:
         try:
-            excel_file = pd.ExcelFile(ficheiro_carregado)
-            aba_alvo = None
-            for sheet in excel_file.sheet_names:
-                if "obra" in sheet.lower():
-                    aba_alvo = sheet
-                    break
-            if not aba_alvo:
-                aba_alvo = excel_file.sheet_names[0]
-                
-            new_df = pd.read_excel(ficheiro_carregado, sheet_name=aba_alvo, header=1)
+            new_df, aba_alvo = carregar_excel_completo(ficheiro_carregado)
             new_name = ficheiro_carregado.name
             
             if st.session_state['df_raw'] is not None and st.session_state['nome_ficheiro'] != new_name:
@@ -173,30 +190,31 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         with c1:
             st.button("📊 Progresso e Fases", on_click=ir_para, args=("📊 Progresso e Fases",), use_container_width=True)
         with c2:
-            st.button("📅 Cronograma de Gantt", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
-        with c3:
             st.button("📋 Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
-        with c4:
+        with c3:
             st.button("📈 Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
+        with c4:
+            st.button("📅 Cronograma (Gantt)", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
 
-# PROCESSAMENTO DOS DADOS PARA ANÁLISE (SEM ELIMINAR LINHAS INCOMPLETAS)
+# PROCESSAMENTO DOS DADOS PARA ANÁLISE
 if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
     
-    # Eliminar colunas de suporte obsoletas
+    # Remover apenas colunas de sistema sem descartar linhas de dados
     colunas_eliminar = ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Caminho do Diretório', 'Abrir']
     df = df.drop(columns=[col for col in colunas_eliminar if col in df.columns], errors='ignore')
 
-    # Criação do ID de Obra abrangente
+    # Identificação flexível da Obra em todas as linhas
     if 'ID Obra' not in df.columns:
         if 'Desenho' in df.columns:
             df['ID Obra'] = df['Desenho'].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else (x if x != 'nan' else "Obra Geral"))
         elif 'Referencia' in df.columns:
             df['ID Obra'] = df['Referencia'].astype(str)
+        elif 'Obra' in df.columns:
+            df['ID Obra'] = df['Obra'].astype(str)
         else:
             df['ID Obra'] = "Obra Geral"
 
-    # Preenchimento de nulos para garantir visibilidade total
     df['ID Obra'] = df['ID Obra'].fillna("Obra Geral").astype(str)
 
     # Estado da Obra
@@ -242,7 +260,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         mask = df_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
         df_filtrado = df_filtrado[mask]
 
-    # CÁLCULO DE PROGRESSO POR OBRA
+    # CÁLCULO DE PROGRESSO POR OBRA (CONSIDERANDO TODAS AS 2000+ LINHAS)
     resumo_obras = []
     for obra, group in df_filtrado.groupby('ID Obra'):
         total_linhas = len(group)
@@ -263,10 +281,10 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     # VISTAS DE ANÁLISE
     # ----------------------------------------------------
 
-    # PROGRESSO E FASES
+    # 1. PROGRESSO E FASES
     if st.session_state['pagina_ativa'] == "📊 Progresso e Fases":
         st.title("📊 Monitorização do Progresso Executado por Obra")
-        st.markdown(f"Exibindo **{len(df_filtrado)}** linhas de registo divididas por **{len(df_resumo)}** obras.")
+        st.markdown(f"Exibindo **{len(df_filtrado)}** registos divididos por **{len(df_resumo)}** obras.")
         
         if not df_resumo.empty:
             fig_bar = go.Figure()
@@ -319,7 +337,28 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         else:
             st.warning("Sem dados disponíveis para a seleção atual.")
 
-    # CRONOGRAMA DE GANTT AMPLO (PASSADO, PRESENTE E FUTURO)
+    # 2. TABELA DETALHADA
+    elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
+        st.title("📋 Base de Dados Detalhada de Obras")
+        st.info(f"A apresentar **{len(df_filtrado)}** linhas totais da base de dados.")
+        
+        cols_ordenadas = ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade'] + [c for c in df_filtrado.columns if c not in ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade']]
+        st.dataframe(df_filtrado[cols_ordenadas], use_container_width=True)
+
+    # 3. PONTO DE SITUAÇÃO
+    elif st.session_state['pagina_ativa'] == "📈 Ponto de Situação":
+        st.title("📈 Indicadores Globais")
+        
+        def contar_estado(keyword):
+            return df_filtrado['Estado da Obra'].astype(str).str.contains(keyword, case=False, na=False).sum()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Para Iniciar", contar_estado('Para Iniciar'))
+        c2.metric("Em Execução", contar_estado('Em Execução'))
+        c3.metric("Concluídas", contar_estado('Concluída'))
+        c4.metric("Suspensas", contar_estado('Suspensa'))
+
+    # 4. CRONOGRAMA DE GANTT (ÚLTIMA OPÇÃO)
     elif st.session_state['pagina_ativa'] == "📅 Cronograma (Gantt)":
         st.title("📅 Cronograma Dinâmico de Obras (Passado, Presente e Futuro)")
         
@@ -348,34 +387,12 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
                 fig_gantt.update_yaxes(autorange="reversed")
                 fig_gantt.update_layout(legend_title_text='Estado:')
                 
-                # Alargamento do Eixo do Tempo
                 data_minima = df_gantt['Data de inicio'].min() - pd.DateOffset(months=1)
                 data_maxima = df_gantt['Data de fim'].max() + pd.DateOffset(months=6)
                 fig_gantt.update_xaxes(range=[data_minima, data_maxima])
                 
                 st.plotly_chart(fig_gantt, use_container_width=True)
             else:
-                st.warning("Existem linhas na base de dados, mas nenhuma possui intervalo de datas preenchido para desenhar o gráfico de Gantt.")
+                st.warning("Existem registos na base de dados, mas nenhum possui intervalo de datas válido para desenhar o gráfico de Gantt.")
         else:
             st.warning("As colunas 'Data de inicio' e 'Data de fim' não foram detetadas no ficheiro.")
-
-    # TABELA DETALHADA COM TODAS AS LINHAS
-    elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
-        st.title("📋 Base de Dados Detalhada de Obras")
-        st.info(f"A apresentar **{len(df_filtrado)}** linhas totais da base de dados.")
-        
-        cols_ordenadas = ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade'] + [c for c in df_filtrado.columns if c not in ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade']]
-        st.dataframe(df_filtrado[cols_ordenadas], use_container_width=True)
-
-    # PONTO DE SITUAÇÃO
-    elif st.session_state['pagina_ativa'] == "📈 Ponto de Situação":
-        st.title("📈 Indicadores Globais")
-        
-        def contar_estado(keyword):
-            return df_filtrado['Estado da Obra'].astype(str).str.contains(keyword, case=False, na=False).sum()
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Para Iniciar", contar_estado('Para Iniciar'))
-        c2.metric("Em Execução", contar_estado('Em Execução'))
-        c3.metric("Concluídas", contar_estado('Concluída'))
-        c4.metric("Suspensas", contar_estado('Suspensa'))
