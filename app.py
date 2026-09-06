@@ -10,20 +10,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# COLOR PALETTE DA PRF (Azul Turquesa Oficial)
+# PALETA DE CORES PRF
 PRF_TURQUOISE = "#0097A7"
 PRF_DARK = "#006064"
-PRF_LIGHT = "#E0F7FA"
 
-# CSS Personalizado para aplicar a cor da PRF e estilo profissional
 st.markdown(f"""
     <style>
-    /* Estilo do título e headers */
     h1, h2, h3, h4 {{
         color: {PRF_TURQUOISE} !important;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }}
-    /* Botões da barra lateral e ações */
     .stButton>button {{
         background-color: {PRF_TURQUOISE};
         color: white;
@@ -35,7 +31,6 @@ st.markdown(f"""
         background-color: {PRF_DARK};
         color: white;
     }}
-    /* Cartões de navegação */
     div[data-testid="metric-container"] {{
         background-color: #ffffff;
         border-left: 5px solid {PRF_TURQUOISE};
@@ -46,28 +41,30 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# ESTADO DA SESSÃO
+# INICIALIZAÇÃO DE ESTADOS
+if 'pagina_ativa' not in st.session_state:
+    st.session_state['pagina_ativa'] = "🏠 Início"
 if 'obra_sel' not in st.session_state:
     st.session_state['obra_sel'] = "Visualização Global (Todas)"
 if 'conjunto_sel' not in st.session_state:
     st.session_state['conjunto_sel'] = ""
-if 'pagina_ativa' not in st.session_state:
-    st.session_state['pagina_ativa'] = "🏠 Início"
 
-def reset_filtros_e_inicio():
+# FUNÇÕES DE NAVEGAÇÃO
+def ir_para(pagina):
+    st.session_state['pagina_ativa'] = pagina
+
+def reset_e_inicio():
     st.session_state['obra_sel'] = "Visualização Global (Todas)"
     st.session_state['conjunto_sel'] = ""
     st.session_state['pagina_ativa'] = "🏠 Início"
 
 # ----------------------------------------------------
-# BARRA LATERAL (LOGO E NAVEGAÇÃO CONDICIONAL)
+# BARRA LATERAL (LOGO + FILTROS + NAVEGAÇÃO)
 # ----------------------------------------------------
 with st.sidebar:
-    # 1. LOGÓTIPO DA PRF E AÇÃO DE REGRESSO À PÁGINA PRINCIPAL
     if os.path.exists("logo.png"):
         st.image("logo.png", use_column_width=True)
     else:
-        # Apresentação do Logo PRF em SVG/HTML com a cor exata (#0097A7)
         st.markdown(f"""
             <div style="background-color:{PRF_TURQUOISE}; padding:15px; border-radius:10px; text-align:center;">
                 <span style="color:white; font-size:28px; font-weight:bold; letter-spacing:2px;">PRF</span><br>
@@ -75,69 +72,65 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
     
-    # Clicar no botão abaixo do logo redefini os filtros e volta à página inicial
-    st.button("🏠 Voltar ao Início", on_click=reset_filtros_e_inicio, use_container_width=True)
+    st.button("🏠 Voltar ao Início", on_click=reset_e_inicio, use_container_width=True)
     st.markdown("---")
 
-    # 3. NAVEGAÇÃO APENAS APÓS O UPLOAD DO FICHEIRO
     tem_ficheiro = 'df_raw' in st.session_state and st.session_state['df_raw'] is not None
 
     if tem_ficheiro:
-        st.subheader("Navegação do Portal")
-        opcoes_menu = ["🏠 Início", "📊 Cronograma (Gantt)", "📋 Tabela Detalhada", "📈 Ponto de Situação"]
+        # 3. FILTROS PERMANENTES NA BARRA LATERAL
+        st.subheader("🔍 Filtros de Pesquisa")
         
-        pagina_selecionada = st.radio(
-            "Selecione a vista:",
-            opcoes_menu,
-            index=opcoes_menu.index(st.session_state['pagina_ativa']),
-            key="radio_navegacao"
-        )
-        st.session_state['pagina_ativa'] = pagina_selecionada
+        df_temp = st.session_state['df_raw'].copy()
+        if 'Desenho' in df_temp.columns:
+            df_temp['ID Obra'] = df_temp['Desenho'].astype(str).apply(lambda x: x.split('-')[0] if '-' in x else x)
+            lista_obras = ["Visualização Global (Todas)"] + list(df_temp['ID Obra'].dropna().unique())
+        else:
+            lista_obras = ["Visualização Global (Todas)"]
+
+        st.selectbox("1 e 2. Selecionar Obra:", lista_obras, key='obra_sel')
+        st.text_input("4. Pesquisar por Conjunto / Desenho:", key='conjunto_sel')
+        
         st.markdown("---")
-    else:
-        st.info("📌 Efetue o carregamento da base de dados para desbloquear os menus de navegação.")
+
+        st.subheader("Navegação")
+        st.button("📊 Cronograma (Gantt)", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
+        st.button("📋 Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
+        st.button("📈 Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
 # ----------------------------------------------------
-# 🏠 PÁGINA INICIAL (ECRÃ LIMPO E LANDING PAGE)
+# 🏠 PÁGINA INICIAL
 # ----------------------------------------------------
 if st.session_state['pagina_ativa'] == "🏠 Início":
     st.title("Portal de Gestão de Obras e Conjuntos")
     st.markdown("### Bem-vindo à plataforma de monitorização em tempo real")
-    
-    st.write("Para inicializar as análises e desbloquear os menus interativos, carregue o ficheiro Excel abaixo:")
     
     ficheiro_carregado = st.file_uploader("Carregar Base de Dados (teste.xlsx)", type=["xlsx"])
     
     if ficheiro_carregado is not None:
         st.session_state['df_raw'] = pd.read_excel(ficheiro_carregado, sheet_name="Obra (B)", header=1)
         st.success("✅ Base de dados carregada com sucesso!")
-        
+
+    # 1 e 2. BOTÕES PERMANENTES QUANDO O FICHEIRO JÁ FOI CARREGADO
+    if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None:
         st.markdown("---")
         st.subheader("Escolha uma das funcionalidades abaixo para começar:")
         
-        # 4. BOTÕES INTERATIVOS NA PÁGINA PRINCIPAL
         c1, c2, c3 = st.columns(3)
         with c1:
-            if st.button("📊 Abrir Cronograma de Gantt", use_container_width=True):
-                st.session_state['pagina_ativa'] = "📊 Cronograma (Gantt)"
-                st.rerun()
+            st.button("📊 Abrir Cronograma de Gantt", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
         with c2:
-            if st.button("📋 Abrir Tabela Detalhada", use_container_width=True):
-                st.session_state['pagina_ativa'] = "📋 Tabela Detalhada"
-                st.rerun()
+            st.button("📋 Abrir Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
         with c3:
-            if st.button("📈 Abrir Ponto de Situação", use_container_width=True):
-                st.session_state['pagina_ativa'] = "📈 Ponto de Situação"
-                st.rerun()
+            st.button("📈 Abrir Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
 # ----------------------------------------------------
-# TRATAMENTO DOS DADOS (QUANDO EXISTE FICHEIRO)
+# PROCESSAMENTO DOS DADOS PARA AS PÁGINAS DE ANÁLISE
 # ----------------------------------------------------
 if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
     df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
     
-    # Renomear e ocultar colunas
     colunas_renomear = {
         'Unnamed: 0': 'Documento / Arquivo',
         'Unnamed: 2': 'Desenhos'
@@ -153,7 +146,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     else:
         df_caminhos = pd.Series([""] * len(df))
 
-    # Traduzir a "Situação"
     if 'Situação' in df.columns:
         def traduzir_estado(val):
             if val is True or str(val).lower() == 'true':
@@ -167,7 +159,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     else:
         df['Situação'] = "Não Definido"
 
-    # Links para Abrir Desenhos
     def criar_link_abrir(caminho, arq):
         if pd.notna(caminho) and str(caminho).strip() != "":
             return f"file:///{str(caminho).replace('\\', '/')}"
@@ -177,7 +168,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
 
     df['Abrir'] = [criar_link_abrir(cam, arq) for cam, arq in zip(df_caminhos, df.get('Documento / Arquivo', ['']*len(df)))]
 
-    # Tratamento para Gantt
     df_gantt = pd.DataFrame()
     if 'Data de inicio' in df.columns and 'Data de fim' in df.columns:
         df['Data de inicio'] = pd.to_datetime(df['Data de inicio'], errors='coerce')
@@ -190,16 +180,12 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
             
         df_gantt = df.dropna(subset=['Data de inicio', 'Data de fim'])
 
-    # FILTROS LATERAIS DINÂMICOS
-    with st.sidebar:
-        st.subheader("🔍 Filtros de Pesquisa")
-        lista_obras = ["Visualização Global (Todas)"] + list(df['ID Obra'].dropna().unique())
-        obra_selecionada = st.selectbox("Selecionar Obra:", lista_obras, key='obra_sel')
-        termo_conjunto = st.text_input("Pesquisar Conjunto / Desenho:", key='conjunto_sel')
-
-    # Filtragem
+    # APLICAÇÃO DOS FILTROS DA BARRA LATERAL
     df_filtrado = df.copy()
     df_gantt_filtrado = df_gantt.copy()
+
+    obra_selecionada = st.session_state['obra_sel']
+    termo_conjunto = st.session_state['conjunto_sel']
 
     if obra_selecionada != "Visualização Global (Todas)":
         df_filtrado = df_filtrado[df_filtrado['ID Obra'] == obra_selecionada]
@@ -214,7 +200,7 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
             df_gantt_filtrado = df_gantt_filtrado[mask_gantt]
 
     # ----------------------------------------------------
-    # 📊 MENU: CRONOGRAMA (GANTT)
+    # VISTAS SELECIONADAS
     # ----------------------------------------------------
     if st.session_state['pagina_ativa'] == "📊 Cronograma (Gantt)":
         st.title("📊 Cronograma Dinâmico de Obras (Gantt)")
@@ -239,9 +225,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
         else:
             st.warning("Nenhum registo com datas válidas encontrado para os filtros selecionados.")
 
-    # ----------------------------------------------------
-    # 📋 MENU: TABELA DETALHADA
-    # ----------------------------------------------------
     elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
         st.title("📋 Base de Dados Detalhada")
         st.dataframe(
@@ -255,9 +238,6 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
             use_container_width=True
         )
 
-    # ----------------------------------------------------
-    # 📈 MENU: PONTO DE SITUAÇÃO / MÉTRICAS
-    # ----------------------------------------------------
     elif st.session_state['pagina_ativa'] == "📈 Ponto de Situação":
         st.title("📈 Indicadores e Ponto de Situação")
         
