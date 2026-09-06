@@ -48,7 +48,7 @@ st.markdown(f"""
 if 'pagina_ativa' not in st.session_state:
     st.session_state['pagina_ativa'] = "🏠 Início"
 if 'obra_sel' not in st.session_state:
-    st.session_state['obra_sel'] = "Visualização Global (Todas)"
+    st.session_state['obra_sel'] = ""
 if 'conjunto_sel' not in st.session_state:
     st.session_state['conjunto_sel'] = ""
 if 'df_raw' not in st.session_state:
@@ -131,19 +131,8 @@ with st.sidebar:
     if tem_ficheiro:
         st.subheader("🔍 Filtros de Pesquisa")
         
-        df_temp = st.session_state['df_raw'].copy()
-        
-        cols_des = [c for c in df_temp.columns if any(k in str(c).lower() for k in ['desenho', 'name', 'referencia'])]
-        if cols_des:
-            col_ref = cols_des[0]
-            df_temp['ID Obra'] = df_temp[col_ref].astype(str).apply(lambda x: str(x).split('-')[0] if '-' in str(x) and str(x) != 'nan' else str(x))
-            obras_unicas = [str(x).strip() for x in df_temp['ID Obra'].unique() if str(x).strip() not in ["", "nan", "None", "l"]]
-            lista_obras = ["Visualização Global (Todas)"] + sorted(list(set(obras_unicas)))
-        else:
-            lista_obras = ["Visualização Global (Todas)"]
-
-        # PESQUISA FLEXÍVEL (TEXTO OU SELEÇÃO)
-        st.text_input("🔍 Pesquisar Obra (código, apenas números ou últimos 4 dígitos):", key='obra_sel')
+        # PESQUISA FLEXÍVEL DE OBRA
+        st.text_input("🔍 Pesquisar Obra (ex: HY25003, 25003 ou 5003):", key='obra_sel')
         st.text_input("📦 Pesquisar por Conjunto / Referência:", key='conjunto_sel')
         
         st.markdown("---")
@@ -262,15 +251,11 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     termo_conjunto = str(st.session_state['conjunto_sel']).strip()
 
     if obra_termo and obra_termo != "Visualização Global (Todas)":
-        # Extrai apenas os dígitos numéricos caso o utilizador tenha pesquisado números
         numeros_termo = re.sub(r'\D', '', obra_termo)
-        
         def corresponder_obra(val):
             val_str = str(val).strip()
-            # 1. Correspondência exata ou parcial de texto
             if obra_termo.lower() in val_str.lower():
                 return True
-            # 2. Correspondência numérica (ex: 25003 ou 5003)
             val_num = re.sub(r'\D', '', val_str)
             if numeros_termo and len(numeros_termo) >= 2 and numeros_termo in val_num:
                 return True
@@ -287,7 +272,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     # VISTAS DE ANÁLISE
     # ----------------------------------------------------
 
-    # 1. PROGRESSO E FASES (PERCENTAGEM DE CONCLUSÃO DAS TAREFAS/FASES)
+    # 1. PROGRESSO E FASES
     if st.session_state['pagina_ativa'] == "📊 Progresso e Fases":
         st.title("📊 Monitorização do Progresso e Fases por Obra")
         
