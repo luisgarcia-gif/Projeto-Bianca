@@ -83,7 +83,6 @@ def carregar_excel_completo(file):
         if 'Obras' in df_res_pct.columns:
             df_res_pct['ID Obra'] = df_res_pct['Obras'].astype(str).str.strip()
             
-        # RENOMEAR COLUNA "Faltando" para "Em Falta" DIRETAMENTE NO CARREGAMENTO
         if 'Faltando' in df_res_pct.columns:
             df_res_pct = df_res_pct.rename(columns={'Faltando': 'Em Falta'})
 
@@ -114,14 +113,18 @@ def carregar_excel_completo(file):
 
 # BARRA LATERAL
 with st.sidebar:
-    # ATUALIZAÇÃO DO LOGOTIPO PARA A IMAGEM 2
-    if os.path.exists("prf_principal_gassolutions_2.png"):
-        st.image("prf_principal_gassolutions_2.png", use_container_width=True)
-    elif os.path.exists("prf_principal_gassolutions.png"):
-        st.image("prf_principal_gassolutions.png", use_container_width=True)
-    elif os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
-    else:
+    
+    # TENTATIVA FORÇADA DE LER A IMAGEM NO DIRETÓRIO DO GITHUB
+    imagem_carregada = False
+    ficheiros_imagem = ["prf_principal_gassolutions.png", "prf_principal_gassolutions_2.png"]
+    
+    for img in ficheiros_imagem:
+        if os.path.isfile(img):
+            st.image(img, use_container_width=True)
+            imagem_carregada = True
+            break
+            
+    if not imagem_carregada:
         st.markdown(f"""
             <div style="background-color:{PRF_TURQUOISE}; padding:15px; border-radius:10px; text-align:center;">
                 <span style="color:white; font-size:28px; font-weight:bold; letter-spacing:2px;">PRF</span><br>
