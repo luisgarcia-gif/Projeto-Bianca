@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import os
 
 st.set_page_config(
@@ -42,7 +43,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# INICIALIZAÇÃO DE ESTADOS DA SESSÃO (PERSISTENTES)
+# ESTADOS DA SESSÃO
 if 'pagina_ativa' not in st.session_state:
     st.session_state['pagina_ativa'] = "🏠 Início"
 if 'obra_sel' not in st.session_state:
@@ -64,9 +65,7 @@ def ir_para(pagina):
 def voltar_ao_inicio_sem_apagar():
     st.session_state['pagina_ativa'] = "🏠 Início"
 
-# ----------------------------------------------------
 # BARRA LATERAL
-# ----------------------------------------------------
 with st.sidebar:
     if os.path.exists("logo.png"):
         st.image("logo.png", use_column_width=True)
@@ -78,7 +77,6 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
     
-    # Botão de retorno mantendo os dados salvos em memória
     st.button("🏠 Voltar ao Início", on_click=voltar_ao_inicio_sem_apagar, use_container_width=True)
     st.markdown("---")
 
@@ -88,32 +86,29 @@ with st.sidebar:
         st.subheader("🔍 Filtros de Pesquisa")
         
         df_temp = st.session_state['df_raw'].copy()
-        if 'Desenho' in df_temp.columns:
-            df_temp['ID Obra'] = df_temp['Desenho'].astype(str).apply(lambda x: x.split('-')[0] if '-' in x else x)
+        if 'ID Obra' in df_temp.columns:
             lista_obras = ["Visualização Global (Todas)"] + list(df_temp['ID Obra'].dropna().unique())
         else:
             lista_obras = ["Visualização Global (Todas)"]
 
-        st.selectbox("1 e 2. Selecionar Obra:", lista_obras, key='obra_sel')
-        st.text_input("4. Pesquisar por Conjunto / Desenho:", key='conjunto_sel')
+        st.selectbox("Selecionar Obra:", lista_obras, key='obra_sel')
+        st.text_input("Pesquisar por Conjunto / Referência:", key='conjunto_sel')
         
         st.markdown("---")
 
         st.subheader("Navegação")
-        st.button("📊 Cronograma (Gantt)", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
+        st.button("📊 Progresso e Fases", on_click=ir_para, args=("📊 Progresso e Fases",), use_container_width=True)
+        st.button("📅 Cronograma (Gantt)", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
         st.button("📋 Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
         st.button("📈 Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
-# ----------------------------------------------------
 # 🏠 PÁGINA INICIAL
-# ----------------------------------------------------
 if st.session_state['pagina_ativa'] == "🏠 Início":
     st.title("Portal de Gestão de Obras e Conjuntos")
     st.markdown("### Monitorização em Tempo Real")
     
-    ficheiro_carregado = st.file_uploader("Carregar Ficheiro de Obras (Qualquer nome .xlsx / .xls)", type=["xlsx", "xls"], key="uploader_input")
+    ficheiro_carregado = st.file_uploader("Carregar Ficheiro de Obras (.xlsx / .xls)", type=["xlsx", "xls"], key="uploader_input")
     
-    # PROCESSAMENTO E LÓGICA DE DECISÃO DE NOVO UPLOAD
     if ficheiro_carregado is not None:
         try:
             excel_file = pd.ExcelFile(ficheiro_carregado)
@@ -128,25 +123,21 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
             new_df = pd.read_excel(ficheiro_carregado, sheet_name=aba_alvo, header=1)
             new_name = ficheiro_carregado.name
             
-            # Se já existia um ficheiro ativo e o nome for diferente, pede confirmação
             if st.session_state['df_raw'] is not None and st.session_state['nome_ficheiro'] != new_name:
                 st.session_state['temp_new_df'] = new_df
                 st.session_state['temp_new_name'] = new_name
             else:
-                # Primeiro carregamento ou mesmo ficheiro
                 st.session_state['df_raw'] = new_df
                 st.session_state['nome_ficheiro'] = new_name
                 st.session_state['temp_new_df'] = None
         except Exception as e:
             st.error(f"Erro ao ler o ficheiro Excel: {e}")
 
-    # PERGUNTA DE DECISÃO SE HOUVER NOVO FICHEIRO DETETADO
     if st.session_state['temp_new_df'] is not None:
         st.warning("⚠️ **Novo ficheiro detetado!**")
         st.subheader("Deseja comparar/anexar o ficheiro atual com o novo?")
         
         col_sim, col_nao = st.columns(2)
-        
         with col_sim:
             if st.button("✅ Sim (Anexar/Comparar Ficheiros)", use_container_width=True):
                 st.session_state['df_raw'] = pd.concat([st.session_state['df_raw'], st.session_state['temp_new_df']], ignore_index=True)
@@ -163,163 +154,207 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
                 st.success("Base de dados substituída com sucesso!")
                 st.rerun()
 
-    # MENSAGEM DE ALERTA OU FICHEIRO ATIVO
     if st.session_state['df_raw'] is None:
-        st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) que pretende analisar para desbloquear a plataforma.")
+        st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) para desbloquear a plataforma.")
     else:
         st.info(f"📁 **Ficheiro ativo na memória:** {st.session_state['nome_ficheiro']}")
         st.markdown("---")
         st.subheader("Escolha uma das funcionalidades abaixo para continuar a análise:")
         
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.button("📊 Abrir Cronograma de Gantt", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
+            st.button("📊 Progresso e Fases", on_click=ir_para, args=("📊 Progresso e Fases",), use_container_width=True)
         with c2:
-            st.button("📋 Abrir Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
+            st.button("📅 Cronograma de Gantt", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
         with c3:
-            st.button("📈 Abrir Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
+            st.button("📋 Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
+        with c4:
+            st.button("📈 Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
-# ----------------------------------------------------
-# PROCESSAMENTO DOS DADOS PARA AS PÁGINAS DE ANÁLISE
-# ----------------------------------------------------
+# PROCESSAMENTO DOS DADOS PARA ANÁLISE
 if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
     df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
     
-    colunas_renomear = {
-        'Unnamed: 0': 'Documento / Arquivo',
-        'Unnamed: 2': 'Desenhos'
-    }
-    df = df.rename(columns=colunas_renomear)
-    
-    if 'Unnamed: 1' in df.columns:
-        df['Caminho_Rede'] = df['Unnamed: 1']
-        df = df.drop(columns=['Unnamed: 1'])
-    elif 'Caminho do Diretório' in df.columns:
-        df['Caminho_Rede'] = df['Caminho do Diretório']
-        if 'Caminho do Diretório' in df.columns and 'Caminho_Rede' != 'Caminho do Diretório':
-            df = df.drop(columns=['Caminho do Diretório'])
-    else:
-        df['Caminho_Rede'] = ""
+    # Removidas colunas associadas a desenhos/abertura
+    colunas_eliminar = ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Desenho', 'Desenhos', 'Caminho do Diretório', 'Abrir']
+    df = df.drop(columns=[col for col in colunas_eliminar if col in df.columns], errors='ignore')
 
+    # Identificação da Obra
+    if 'ID Obra' not in df.columns:
+        if 'Referencia' in df.columns:
+            df['ID Obra'] = df['Referencia'].astype(str)
+        else:
+            df['ID Obra'] = "Obra Geral"
+
+    # 4. Estado da Obra (Concluída vs Em Execução)
     if 'Situação' in df.columns:
         def traduzir_estado(val):
-            if val is True or str(val).lower() == 'true':
+            if val is True or str(val).lower() == 'true' or "conclu" in str(val).lower():
                 return "Obra Concluída"
-            elif val is False or str(val).lower() == 'false':
-                return "Obra Em Execução"
-            elif pd.isna(val) or str(val).strip() == "" or "iniciar" in str(val).lower():
-                return "Obra Para Iniciar"
-            elif "suspensa" in str(val).lower() or "parada" in str(val).lower():
-                return "Obra Suspensa"
-            return str(val)
-        df['Situação'] = df['Situação'].apply(traduzir_estado)
+            elif val is False or str(val).lower() == 'false' or "execu" in str(val).lower():
+                return "Em Execução"
+            elif "suspensa" in str(val).lower():
+                return "Suspensa"
+            return "Para Iniciar"
+        df['Estado da Obra'] = df['Situação'].apply(traduzir_estado)
     else:
-        df['Situação'] = "Obra Para Iniciar"
+        df['Estado da Obra'] = "Para Iniciar"
 
-    df_gantt = pd.DataFrame()
-    if 'Data de inicio' in df.columns and 'Data de fim' in df.columns:
-        df['Data de inicio'] = pd.to_datetime(df['Data de inicio'], errors='coerce')
-        df['Data de fim'] = pd.to_datetime(df['Data de fim'], errors='coerce')
-        
-        if 'Desenho' in df.columns:
-            df['ID Obra'] = df['Desenho'].astype(str).apply(lambda x: x.split('-')[0] if '-' in x else x)
-        else:
-            df['ID Obra'] = "Desconhecido"
-            
-        df_gantt = df.dropna(subset=['Data de inicio', 'Data de fim'])
+    # 3. Receção do Material
+    if 'Receção Material' not in df.columns and 'Material' in df.columns:
+        df['Receção Material'] = df['Material']
+    elif 'Receção Material' not in df.columns:
+        df['Receção Material'] = "Informação não disponível"
+
+    # 5. Trabalhadores
+    if 'Trabalhadores' not in df.columns:
+        df['Trabalhadores'] = "Não Atribuído"
+
+    # 6 e 7. Controlo da Qualidade dos Conjuntos
+    if 'Qualidade' not in df.columns:
+        df['Qualidade'] = "Pendente"
 
     # FILTRAGEM DINÂMICA
     df_filtrado = df.copy()
-    df_gantt_filtrado = df_gantt.copy()
-
     obra_selecionada = st.session_state['obra_sel']
     termo_conjunto = st.session_state['conjunto_sel']
 
     if obra_selecionada != "Visualização Global (Todas)":
         df_filtrado = df_filtrado[df_filtrado['ID Obra'] == obra_selecionada]
-        if not df_gantt_filtrado.empty:
-            df_gantt_filtrado = df_gantt_filtrado[df_gantt_filtrado['ID Obra'] == obra_selecionada]
 
     if termo_conjunto:
         mask = df_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
         df_filtrado = df_filtrado[mask]
-        if not df_gantt_filtrado.empty:
-            mask_gantt = df_gantt_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
-            df_gantt_filtrado = df_gantt_filtrado[mask_gantt]
+
+    # 2. CONTADOR DE LINHAS E CÁLCULO DE PERCENTAGEM DE PROGRESSO POR OBRA
+    resumo_obras = []
+    for obra, group in df_filtrado.groupby('ID Obra'):
+        total_linhas = len(group)
+        concluidas = len(group[group['Estado da Obra'] == 'Obra Concluída'])
+        pct_executado = round((concluidas / total_linhas) * 100, 1) if total_linhas > 0 else 0
+        pct_faltando = round(100 - pct_executado, 1)
+        
+        resumo_obras.append({
+            'ID Obra': obra,
+            'Total Linhas/Tarefas': total_linhas,
+            'Concluídas': concluidas,
+            'Total Executado (%)': pct_executado,
+            'Faltando (%)': pct_faltando
+        })
+    df_resumo = pd.DataFrame(resumo_obras)
 
     # ----------------------------------------------------
     # VISTAS DE ANÁLISE
     # ----------------------------------------------------
-    if st.session_state['pagina_ativa'] == "📊 Cronograma (Gantt)":
-        st.title("📊 Cronograma Dinâmico de Obras (Gantt)")
+
+    # 8. GRÁFICOS DE PROGRESSO ESTILO IMAGEM
+    if st.session_state['pagina_ativa'] == "📊 Progresso e Fases":
+        st.title("📊 Monitorização do Progresso Executado por Obra")
+        st.markdown("Visualização percentual de avanço de fabrico/montagem e volume em falta por obra.")
         
-        if not df_gantt_filtrado.empty:
-            fig = px.timeline(
-                df_gantt_filtrado, 
-                x_start="Data de inicio", 
-                x_end="Data de fim", 
-                y="ID Obra", 
-                color="Situação",
-                hover_name="Documento / Arquivo",
-                title="Cronograma de Obras Ativas e Projeção Futura",
-                color_discrete_map={
-                    "Obra Concluída": "#4CAF50",    # Verde
-                    "Obra Em Execução": "#FFEB3B",  # Amarelo
-                    "Obra Para Iniciar": "#F44336", # Vermelho
-                    "Obra Suspensa": "#D32F2F"     # Vermelho Escuro
-                }
+        if not df_resumo.empty:
+            # Gráfico de Barras Empilhadas (Total Executado vs Faltando)
+            fig_bar = go.Figure()
+            fig_bar.add_trace(go.Bar(
+                y=df_resumo['ID Obra'],
+                x=df_resumo['Total Executado (%)'],
+                name='% Executado',
+                orientation='h',
+                marker=dict(color='#4CAF50'),
+                text=df_resumo['Total Executado (%)'].astype(str) + '%',
+                textposition='inside'
+            ))
+            fig_bar.add_trace(go.Bar(
+                y=df_resumo['ID Obra'],
+                x=df_resumo['Faltando (%)'],
+                name='% Faltando',
+                orientation='h',
+                marker=dict(color='#2196F3'),
+                text=df_resumo['Faltando (%)'].astype(str) + '%',
+                textposition='inside'
+            ))
+            fig_bar.update_layout(
+                barmode='stack',
+                title='Avanço Geral por Obra (%)',
+                xaxis=dict(title='Percentagem (%)', range=[0, 100]),
+                yaxis=dict(autorange="reversed"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            fig.update_yaxes(autorange="reversed")
-            fig.update_layout(legend_title_text='Legenda de Estados:')
-            
-            data_maxima = df_gantt_filtrado['Data de fim'].max()
-            if pd.notna(data_maxima):
-                limite_futuro = data_maxima + pd.DateOffset(months=6)
-                fig.update_xaxes(range=[df_gantt_filtrado['Data de inicio'].min(), limite_futuro])
-                
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            st.markdown("### Tabela Resumo de Execução")
+            st.dataframe(
+                df_resumo,
+                column_config={
+                    "Total Executado (%)": st.column_config.ProgressColumn(
+                        "Total Executado (%)",
+                        format="%.1f%%",
+                        min_value=0,
+                        max_value=100
+                    ),
+                    "Faltando (%)": st.column_config.ProgressColumn(
+                        "Faltando (%)",
+                        format="%.1f%%",
+                        min_value=0,
+                        max_value=100
+                    )
+                },
+                use_container_width=True
+            )
         else:
-            st.warning("Nenhum registo com datas válidas encontrado para os filtros selecionados.")
+            st.warning("Sem dados disponíveis para a seleção atual.")
 
-    elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
-        st.title("📋 Base de Dados Detalhada")
+    # 8. CRONOGRAMA DE GANTT EXPLICITO E CLARO
+    elif st.session_state['pagina_ativa'] == "📅 Cronograma (Gantt)":
+        st.title("📅 Cronograma Dinâmico de Obras (Gantt)")
         
-        def gerar_link_abrir(caminho):
-            if pd.notna(caminho) and str(caminho).strip() != "":
-                cam_limpo = str(caminho).replace('\\', '/')
-                return f"file:///{cam_limpo}"
-            return None
-
-        df_exibicao = df_filtrado.copy()
-        df_exibicao['Abrir Ficheiro'] = df_exibicao['Caminho_Rede'].apply(gerar_link_abrir)
-
-        st.dataframe(
-            df_exibicao,
-            column_config={
-                "Abrir Ficheiro": st.column_config.LinkColumn(
-                    "Abrir",
-                    display_text="📂 Abrir Desenho",
-                    help="Clique para abrir ou aceder ao ficheiro de desenho associado"
+        if 'Data de inicio' in df_filtrado.columns and 'Data de fim' in df_filtrado.columns:
+            df_gantt = df_filtrado.dropna(subset=['Data de inicio', 'Data de fim']).copy()
+            df_gantt['Data de inicio'] = pd.to_datetime(df_gantt['Data de inicio'], errors='coerce')
+            df_gantt['Data de fim'] = pd.to_datetime(df_gantt['Data de fim'], errors='coerce')
+            
+            if not df_gantt.empty:
+                fig_gantt = px.timeline(
+                    df_gantt,
+                    x_start="Data de inicio",
+                    x_end="Data de fim",
+                    y="ID Obra",
+                    color="Estado da Obra",
+                    hover_data=["Trabalhadores", "Receção Material", "Qualidade"],
+                    title="Planeamento Temporal por Obra",
+                    color_discrete_map={
+                        "Obra Concluída": "#4CAF50",
+                        "Em Execução": "#FFEB3B",
+                        "Para Iniciar": "#F44336",
+                        "Suspensa": "#D32F2F"
+                    }
                 )
-            },
-            use_container_width=True
-        )
+                fig_gantt.update_yaxes(autorange="reversed")
+                fig_gantt.update_layout(legend_title_text='Estado:')
+                st.plotly_chart(fig_gantt, use_container_width=True)
+            else:
+                st.warning("Nenhum registo com datas válidas para desenhar o gráfico de Gantt.")
+        else:
+            st.warning("As colunas 'Data de inicio' e 'Data de fim' não foram encontradas no ficheiro.")
 
-        with st.expander("📎 Carregar / Anexar Desenho em PDF para Análise"):
-            up_desenho = st.file_uploader("Arraste aqui um ficheiro de desenho para rápida verificação:", type=["pdf", "png", "jpg"])
-            if up_desenho is not None:
-                st.success(f"Ficheiro {up_desenho.name} pronto para consulta.")
+    # TABELA DETALHADA
+    elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
+        st.title("📋 Base de Dados Detalhada de Obras")
+        
+        # Apresentação das colunas relevantes
+        cols_mostrar = ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade'] + [c for c in df_filtrado.columns if c not in ['ID Obra', 'Estado da Obra', 'Trabalhadores', 'Receção Material', 'Qualidade']]
+        st.dataframe(df_filtrado[cols_mostrar], use_container_width=True)
 
+    # PONTO DE SITUAÇÃO
     elif st.session_state['pagina_ativa'] == "📈 Ponto de Situação":
-        st.title("📈 Indicadores e Ponto de Situação")
+        st.title("📈 Indicadores Globais")
         
         def contar_estado(keyword):
-            return df_filtrado['Situação'].astype(str).str.contains(keyword, case=False, na=False).sum()
+            return df_filtrado['Estado da Obra'].astype(str).str.contains(keyword, case=False, na=False).sum()
 
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("Para Iniciar", contar_estado('Para Iniciar'))
-        col2.metric("Já Iniciadas", contar_estado('Iniciada'))
-        col3.metric("Em Execução", contar_estado('Em Execução'))
-        col4.metric("Concluídas", contar_estado('Concluída'))
-        col5.metric("Suspensas", contar_estado('Suspensa'))
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Para Iniciar", contar_estado('Para Iniciar'))
+        c2.metric("Em Execução", contar_estado('Em Execução'))
+        c3.metric("Concluídas", contar_estado('Concluída'))
+        c4.metric("Suspensas", contar_estado('Suspensa'))
