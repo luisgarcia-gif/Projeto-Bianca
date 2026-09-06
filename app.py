@@ -43,7 +43,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# ESTADOS DA SESSÃO
+# ESTADOS DA SESSÃO E SEGURANÇA DE ROTAS
 vistas_validas = ["🏠 Início", "📊 Progresso e Fases", "📋 Tabela Detalhada", "📈 Indicadores Globais & Tempos"]
 
 if 'pagina_ativa' not in st.session_state or st.session_state['pagina_ativa'] not in vistas_validas:
@@ -306,15 +306,14 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
                 
             st.markdown("### Percentagem de Conclusão por Fase (Fabrico / Montagem / Obra)")
             
-            cols_pct = [c for c in ['Fabrico', 'Montagem', 'Obra', 'Total executado', 'Faltando'] if c in df_pct.columns]
-            
+            # Gráfico de Barras com Cores Melhoradas
             fig_fases = go.Figure()
             if 'Fabrico' in df_pct.columns:
-                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Fabrico']*100, name='Fabrico (%)', orientation='h', marker_color='#1976D2'))
+                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Fabrico']*100, name='Fabrico (%)', orientation='h', marker_color='#9C27B0')) # Roxo
             if 'Montagem' in df_pct.columns:
-                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Montagem']*100, name='Montagem (%)', orientation='h', marker_color='#FFC107'))
+                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Montagem']*100, name='Montagem (%)', orientation='h', marker_color='#FF9800')) # Laranja
             if 'Obra' in df_pct.columns:
-                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Obra']*100, name='Obra (%)', orientation='h', marker_color='#0097A7'))
+                fig_fases.add_trace(go.Bar(y=df_pct['ID Obra'], x=df_pct['Obra']*100, name='Obra (%)', orientation='h', marker_color='#4CAF50')) # Verde
                 
             fig_fases.update_layout(
                 barmode='group',
@@ -325,17 +324,21 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             st.plotly_chart(fig_fases, use_container_width=True)
 
             st.markdown("### Tabela Detalhada de Progresso por Fase")
-            config_cols = {}
-            for col_p in cols_pct:
-                config_cols[col_p] = st.column_config.ProgressColumn(
-                    col_p,
-                    format="%.0f%%" if df_pct[col_p].max() > 1 else "%.1f%%",
-                    min_value=0,
-                    max_value=100 if df_pct[col_p].max() > 1 else 1.0
-                )
             
-            # ELIMINAR A COLUNA "ID Obra" DA VISUALIZAÇÃO COMO PEDIDO
-            df_pct_display = df_pct.drop(columns=['ID Obra'], errors='ignore')
+            # ELIMINA AS COLUNAS "MONTAGEM" E "OBRA" DA TABELA VISUAL
+            cols_table_pct = [c for c in ['Obras', 'Fabrico', 'Total executado', 'Faltando'] if c in df_pct.columns]
+            
+            config_cols = {}
+            for col_p in cols_table_pct:
+                if col_p != 'Obras':
+                    config_cols[col_p] = st.column_config.ProgressColumn(
+                        col_p,
+                        format="%.0f%%" if df_pct[col_p].max() > 1 else "%.1f%%",
+                        min_value=0,
+                        max_value=100 if df_pct[col_p].max() > 1 else 1.0
+                    )
+            
+            df_pct_display = df_pct[cols_table_pct].copy()
             st.dataframe(df_pct_display, column_config=config_cols, use_container_width=True)
             
         else:
