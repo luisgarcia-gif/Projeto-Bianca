@@ -65,8 +65,8 @@ def ir_para(pagina):
 def voltar_ao_inicio_sem_apagar():
     st.session_state['pagina_ativa'] = "🏠 Início"
 
-# FUNÇÃO ROBUSTA PARA LER TODAS AS LINHAS DO EXCEL SEM PERDAS
-def carregar_excel_completo(file):
+# ALGORITMO DE DETEÇÃO INTELIGENTE DE CABEÇALHO (PROCURA A LINHA COM OS TÍTULOS REAIS)
+def carregar_excel_inteligente(file):
     excel_file = pd.ExcelFile(file)
     aba_alvo = None
     for sheet in excel_file.sheet_names:
@@ -76,16 +76,23 @@ def carregar_excel_completo(file):
     if not aba_alvo:
         aba_alvo = excel_file.sheet_names[0]
         
-    # Tenta ler com header na linha 0 (padrão)
-    df_temp = pd.read_excel(file, sheet_name=aba_alvo, header=0)
+    # Lê os primeiros 20 registos sem cabeçalho para detetar onde estão as palavras-chave
+    df_raw_preview = pd.read_excel(file, sheet_name=aba_alvo, header=None, nrows=20)
     
-    # Se a primeira linha estiver maioritariamente vazia ou for título decorativo, tenta ler com header=1
-    if df_temp.columns.str.contains('Unnamed').sum() > len(df_temp.columns) / 2 and len(df_temp) > 0:
-        df_alt = pd.read_excel(file, sheet_name=aba_alvo, header=1)
-        if len(df_alt) > len(df_temp):
-            df_temp = df_alt
+    header_row_idx = 0
+    max_matches = 0
+    palavras_chave = ['desenho', 'situação', 'situacao', 'trabalhadores', 'obra', 'abrir', 'referencia', 'material', 'qualidade']
+    
+    for idx, row in df_raw_preview.iterrows():
+        row_str = row.astype(str).str.lower().tolist()
+        matches = sum(1 for p in palavras_chave if any(p in cell for cell in row_str))
+        if matches > max_matches:
+            max_matches = matches
+            header_row_idx = idx
 
-    return df_temp, aba_alvo
+    # Carrega o DataFrame a partir da linha onde foi detetado o verdadeiro cabeçalho
+    df_final = pd.read_excel(file, sheet_name=aba_alvo, header=header_row_idx)
+    return df_final, aba_alvo
 
 # BARRA LATERAL
 with st.sidebar:
@@ -109,19 +116,12 @@ with st.sidebar:
         
         df_temp = st.session_state['df_raw'].copy()
         
-        # Procura coluna de identificação de obra
-        col_obra_nome = None
-        for col in ['ID Obra', 'Desenho', 'Referencia', 'Obra']:
-            if col in df_temp.columns:
-                col_obra_nome = col
-                break
-                
-        if col_obra_nome:
-            if col_obra_nome == 'Desenho':
-                obras_unicas = df_temp[col_obra_nome].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else x).dropna().unique()
-            else:
-                obras_unicas = df_temp[col_obra_nome].astype(str).dropna().unique()
-            lista_obras = ["Visualização Global (Todas)"] + [str(x) for x in obras_unicas if str(x).strip() != "" and str(x).strip() != "nan"]
+        # Extração do ID Obra
+        col_desenho = [c for c in df_temp.columns if 'desenho' in str(c).lower()]
+        if col_desenho:
+            df_temp['ID Obra'] = df_temp[col_desenho[0]].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else x)
+            obras_unicas = df_temp['ID Obra'].dropna().unique()
+            lista_obras = ["Visualização Global (Todas)"] + [str(x) for x in obras_unicas if str(x).strip() not in ["", "nan", "None"]]
         else:
             lista_obras = ["Visualização Global (Todas)"]
 
@@ -145,7 +145,7 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
     
     if ficheiro_carregado is not None:
         try:
-            new_df, aba_alvo = carregar_excel_completo(ficheiro_carregado)
+            new_df, aba_alvo = carregar_excel_inteligente(ficheiro_carregado)
             new_name = ficheiro_carregado.name
             
             if st.session_state['df_raw'] is not None and st.session_state['nome_ficheiro'] != new_name:
@@ -182,7 +182,7 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
     if st.session_state['df_raw'] is None:
         st.warning("⚠️ **Atenção:** É obrigatório efetuar o carregamento do ficheiro Excel (.xlsx / .xls) para desbloquear a plataforma.")
     else:
-        st.info(f"📁 **Ficheiro ativo na memória:** {st.session_state['nome_ficheiro']} | **Total de Registos:** {len(st.session_state['df_raw'])} linhas")
+        st.info(f"📁 **Ficheiro ativo:** {st.session_state['nome_ficheiro']} | **Total de Linhas Carregadas:** {len(st.session_state['df_raw'])} registos")
         st.markdown("---")
         st.subheader("Escolha uma das funcionalidades abaixo para continuar a análise:")
         
@@ -196,29 +196,26 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         with c4:
             st.button("📅 Cronograma (Gantt)", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
 
-# PROCESSAMENTO DOS DADOS PARA ANÁLISE
+# PROCESSAMENTO DOS DADOS PARA ANÁLISE (COM CABEÇALHO DEDUZIDO CORRETAMENTE)
 if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
     
-    # Remover apenas colunas de sistema sem descartar linhas de dados
-    colunas_eliminar = ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Caminho do Diretório', 'Abrir']
+    # Eliminar colunas nulas/desnecessárias
+    colunas_eliminar = ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Abrir']
     df = df.drop(columns=[col for col in colunas_eliminar if col in df.columns], errors='ignore')
 
-    # Identificação flexível da Obra em todas as linhas
-    if 'ID Obra' not in df.columns:
-        if 'Desenho' in df.columns:
-            df['ID Obra'] = df['Desenho'].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else (x if x != 'nan' else "Obra Geral"))
-        elif 'Referencia' in df.columns:
-            df['ID Obra'] = df['Referencia'].astype(str)
-        elif 'Obra' in df.columns:
-            df['ID Obra'] = df['Obra'].astype(str)
-        else:
-            df['ID Obra'] = "Obra Geral"
+    # Identificação da Coluna do Desenho/Obra
+    col_desenho = [c for c in df.columns if 'desenho' in str(c).lower()]
+    if col_desenho:
+        df['ID Obra'] = df[col_desenho[0]].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else (x if x != 'nan' else "Obra Geral"))
+    else:
+        df['ID Obra'] = "Obra Geral"
 
     df['ID Obra'] = df['ID Obra'].fillna("Obra Geral").astype(str)
 
-    # Estado da Obra
-    if 'Situação' in df.columns:
+    # Identificação da Coluna Situação
+    col_sit = [c for c in df.columns if 'situa' in str(c).lower()]
+    if col_sit:
         def traduzir_estado(val):
             s = str(val).lower().strip()
             if val is True or s == 'true' or "conclu" in s:
@@ -228,25 +225,23 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             elif "suspensa" in s or "parada" in s:
                 return "Suspensa"
             return "Para Iniciar"
-        df['Estado da Obra'] = df['Situação'].apply(traduzir_estado)
+        df['Estado da Obra'] = df[col_sit[0]].apply(traduzir_estado)
     else:
         df['Estado da Obra'] = "Para Iniciar"
 
-    # Receção de Material
-    if 'Receção Material' not in df.columns and 'Material' in df.columns:
-        df['Receção Material'] = df['Material'].fillna("Pendente")
-    elif 'Receção Material' not in df.columns:
-        df['Receção Material'] = "Sem informação"
-
-    # Trabalhadores
-    if 'Trabalhadores' not in df.columns:
-        df['Trabalhadores'] = "Não Atribuído"
+    # Identificação dos Trabalhadores
+    col_trab = [c for c in df.columns if 'trabalha' in str(c).lower()]
+    if col_trab:
+        df['Trabalhadores'] = df[col_trab[0]].fillna("Não Atribuído")
     else:
-        df['Trabalhadores'] = df['Trabalhadores'].fillna("Não Atribuído")
+        df['Trabalhadores'] = "Não Atribuído"
 
-    # Qualidade
-    if 'Qualidade' not in df.columns:
-        df['Qualidade'] = "Pendente"
+    # Receção de Material e Qualidade
+    col_mat = [c for c in df.columns if 'material' in str(c).lower() or 'rece' in str(c).lower()]
+    df['Receção Material'] = df[col_mat[0]].fillna("Pendente") if col_mat else "Sem informação"
+
+    col_qual = [c for c in df.columns if 'qualid' in str(c).lower()]
+    df['Qualidade'] = df[col_qual[0]].fillna("Pendente") if col_qual else "Pendente"
 
     # FILTRAGEM DINÂMICA
     df_filtrado = df.copy()
@@ -260,7 +255,7 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
         mask = df_filtrado.astype(str).apply(lambda x: x.str.contains(termo_conjunto, case=False, na=False)).any(axis=1)
         df_filtrado = df_filtrado[mask]
 
-    # CÁLCULO DE PROGRESSO POR OBRA (CONSIDERANDO TODAS AS 2000+ LINHAS)
+    # CÁLCULO DE PROGRESSO POR OBRA
     resumo_obras = []
     for obra, group in df_filtrado.groupby('ID Obra'):
         total_linhas = len(group)
@@ -362,10 +357,13 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
     elif st.session_state['pagina_ativa'] == "📅 Cronograma (Gantt)":
         st.title("📅 Cronograma Dinâmico de Obras (Passado, Presente e Futuro)")
         
-        if 'Data de inicio' in df_filtrado.columns and 'Data de fim' in df_filtrado.columns:
-            df_gantt = df_filtrado.dropna(subset=['Data de inicio', 'Data de fim']).copy()
-            df_gantt['Data de inicio'] = pd.to_datetime(df_gantt['Data de inicio'], errors='coerce')
-            df_gantt['Data de fim'] = pd.to_datetime(df_gantt['Data de fim'], errors='coerce')
+        col_ini = [c for c in df_filtrado.columns if 'inicio' in str(c).lower() or 'início' in str(c).lower()]
+        col_fim = [c for c in df_filtrado.columns if 'fim' in str(c).lower()]
+        
+        if col_ini and col_fim:
+            df_gantt = df_filtrado.dropna(subset=[col_ini[0], col_fim[0]]).copy()
+            df_gantt['Data de inicio'] = pd.to_datetime(df_gantt[col_ini[0]], errors='coerce')
+            df_gantt['Data de fim'] = pd.to_datetime(df_gantt[col_fim[0]], errors='coerce')
             df_gantt = df_gantt.dropna(subset=['Data de inicio', 'Data de fim'])
             
             if not df_gantt.empty:
@@ -395,4 +393,4 @@ if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] !
             else:
                 st.warning("Existem registos na base de dados, mas nenhum possui intervalo de datas válido para desenhar o gráfico de Gantt.")
         else:
-            st.warning("As colunas 'Data de inicio' e 'Data de fim' não foram detetadas no ficheiro.")
+            st.warning("As colunas de datas ('Data de inicio' / 'Data de fim') não foram detetadas no ficheiro.")
