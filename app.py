@@ -65,7 +65,7 @@ def ir_para(pagina):
 def voltar_ao_inicio_sem_apagar():
     st.session_state['pagina_ativa'] = "🏠 Início"
 
-# ALGORITMO DE DETEÇÃO INTELIGENTE DE CABEÇALHO (PROCURA A LINHA COM OS TÍTULOS REAIS)
+# ALGORITMO DE DETEÇÃO INTELIGENTE DE CABEÇALHO (CORRIGIDO E ROBUSTO)
 def carregar_excel_inteligente(file):
     excel_file = pd.ExcelFile(file)
     aba_alvo = None
@@ -76,21 +76,22 @@ def carregar_excel_inteligente(file):
     if not aba_alvo:
         aba_alvo = excel_file.sheet_names[0]
         
-    # Lê os primeiros 20 registos sem cabeçalho para detetar onde estão as palavras-chave
-    df_raw_preview = pd.read_excel(file, sheet_name=aba_alvo, header=None, nrows=20)
+    # Lê as primeiras 25 linhas sem assumir cabeçalho
+    df_preview = pd.read_excel(file, sheet_name=aba_alvo, header=None, nrows=25)
     
     header_row_idx = 0
     max_matches = 0
     palavras_chave = ['desenho', 'situação', 'situacao', 'trabalhadores', 'obra', 'abrir', 'referencia', 'material', 'qualidade']
     
-    for idx, row in df_raw_preview.iterrows():
-        row_str = row.astype(str).str.lower().tolist()
-        matches = sum(1 for p in palavras_chave if any(p in cell for cell in row_str))
+    for idx, row in df_preview.iterrows():
+        # Converte cada célula em texto limpo para evitar erros de tipo float
+        row_cells = [str(x).lower().strip() for x in row.values if pd.notna(x)]
+        matches = sum(1 for p in palavras_chave if any(p in cell for cell in row_cells))
         if matches > max_matches:
             max_matches = matches
             header_row_idx = idx
 
-    # Carrega o DataFrame a partir da linha onde foi detetado o verdadeiro cabeçalho
+    # Carrega todo o ficheiro a partir do cabeçalho detetado
     df_final = pd.read_excel(file, sheet_name=aba_alvo, header=header_row_idx)
     return df_final, aba_alvo
 
@@ -116,7 +117,7 @@ with st.sidebar:
         
         df_temp = st.session_state['df_raw'].copy()
         
-        # Extração do ID Obra
+        # Procura coluna de identificação de obra
         col_desenho = [c for c in df_temp.columns if 'desenho' in str(c).lower()]
         if col_desenho:
             df_temp['ID Obra'] = df_temp[col_desenho[0]].astype(str).apply(lambda x: x.split('-')[0] if '-' in x and x != 'nan' else x)
@@ -196,11 +197,11 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         with c4:
             st.button("📅 Cronograma (Gantt)", on_click=ir_para, args=("📅 Cronograma (Gantt)",), use_container_width=True)
 
-# PROCESSAMENTO DOS DADOS PARA ANÁLISE (COM CABEÇALHO DEDUZIDO CORRETAMENTE)
+# PROCESSAMENTO DOS DADOS PARA ANÁLISE
 if st.session_state['df_raw'] is not None and st.session_state['pagina_ativa'] != "🏠 Início":
     df = st.session_state['df_raw'].copy()
     
-    # Eliminar colunas nulas/desnecessárias
+    # Remover apenas colunas de sistema sem descartar linhas de dados
     colunas_eliminar = ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Abrir']
     df = df.drop(columns=[col for col in colunas_eliminar if col in df.columns], errors='ignore')
 
