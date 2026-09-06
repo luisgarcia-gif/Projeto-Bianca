@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-import base64
 
 st.set_page_config(
     page_title="PRF - Portal de Gestão de Obras", 
@@ -15,6 +14,7 @@ st.set_page_config(
 PRF_TURQUOISE = "#0097A7"
 PRF_DARK = "#006064"
 
+# CSS PERSONALIZADO
 st.markdown(f"""
     <style>
     h1, h2, h3, h4 {{
@@ -50,7 +50,6 @@ if 'obra_sel' not in st.session_state:
 if 'conjunto_sel' not in st.session_state:
     st.session_state['conjunto_sel'] = ""
 
-# FUNÇÕES DE NAVEGAÇÃO
 def ir_para(pagina):
     st.session_state['pagina_ativa'] = pagina
 
@@ -58,12 +57,6 @@ def reset_e_inicio():
     st.session_state['obra_sel'] = "Visualização Global (Todas)"
     st.session_state['conjunto_sel'] = ""
     st.session_state['pagina_ativa'] = "🏠 Início"
-
-# FUNÇÃO PARA EXIBIR PDF EMBUTIDO NA APP
-def mostrar_pdf(file_bytes):
-    base64_pdf = base64.b64encode(file_bytes).decode('utf-8')
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_html=True)
 
 # ----------------------------------------------------
 # BARRA LATERAL
@@ -101,7 +94,7 @@ with st.sidebar:
 
         st.subheader("Navegação")
         st.button("📊 Cronograma (Gantt)", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
-        st.button("📋 Tabela & Desenhos", on_click=ir_para, args=("📋 Tabela & Desenhos",), use_container_width=True)
+        st.button("📋 Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
         st.button("📈 Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
 # ----------------------------------------------------
@@ -140,7 +133,7 @@ if st.session_state['pagina_ativa'] == "🏠 Início":
         with c1:
             st.button("📊 Abrir Cronograma de Gantt", on_click=ir_para, args=("📊 Cronograma (Gantt)",), use_container_width=True)
         with c2:
-            st.button("📋 Abrir Tabela & Desenhos", on_click=ir_para, args=("📋 Tabela & Desenhos",), use_container_width=True)
+            st.button("📋 Abrir Tabela Detalhada", on_click=ir_para, args=("📋 Tabela Detalhada",), use_container_width=True)
         with c3:
             st.button("📈 Abrir Ponto de Situação", on_click=ir_para, args=("📈 Ponto de Situação",), use_container_width=True)
 
@@ -167,18 +160,21 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     else:
         df['Caminho_Rede'] = ""
 
+    # REGRAS DE ESTADO/SITUAÇÃO COM AS CORES SOLICITADAS
     if 'Situação' in df.columns:
         def traduzir_estado(val):
             if val is True or str(val).lower() == 'true':
                 return "Concluída"
             elif val is False or str(val).lower() == 'false':
                 return "Em Execução"
-            elif pd.isna(val) or str(val).strip() == "":
+            elif pd.isna(val) or str(val).strip() == "" or "iniciar" in str(val).lower():
                 return "Para Iniciar"
+            elif "suspensa" in str(val).lower() or "parada" in str(val).lower():
+                return "Suspensa"
             return str(val)
         df['Situação'] = df['Situação'].apply(traduzir_estado)
     else:
-        df['Situação'] = "Não Definido"
+        df['Situação'] = "Para Iniciar"
 
     df_gantt = pd.DataFrame()
     if 'Data de inicio' in df.columns and 'Data de fim' in df.columns:
@@ -192,7 +188,7 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
             
         df_gantt = df.dropna(subset=['Data de inicio', 'Data de fim'])
 
-    # FILTRAGEM
+    # FILTRAGEM DINÂMICA
     df_filtrado = df.copy()
     df_gantt_filtrado = df_gantt.copy()
 
@@ -216,6 +212,15 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
     # ----------------------------------------------------
     if st.session_state['pagina_ativa'] == "📊 Cronograma (Gantt)":
         st.title("📊 Cronograma Dinâmico de Obras (Gantt)")
+        
+        # LEGENDA EXPLICATIVA DAS CORES
+        st.markdown("""
+        **Legenda de Estados:**
+        * 🟢 **Verde**: Obra Concluída
+        * 🟡 **Amarelo**: Obra Em Execução
+        * 🔴 **Vermelho**: Obra Para Iniciar ou Suspensa
+        """)
+        
         if not df_gantt_filtrado.empty:
             fig = px.timeline(
                 df_gantt_filtrado, 
@@ -224,56 +229,57 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
                 y="ID Obra", 
                 color="Situação",
                 hover_name="Documento / Arquivo",
-                title="Planeamento Temporal por Obra",
+                title="Cronograma de Obras Ativas e Projeção Futura",
+                # MAPA DE CORES ESPECÍFICO
                 color_discrete_map={
-                    "Concluída": "#004D40",
-                    "Em Execução": PRF_TURQUOISE,
-                    "Para Iniciar": "#80DEEA",
-                    "Suspensa": "#D32F2F"
+                    "Concluída": "#4CAF50",    # Verde
+                    "Em Execução": "#FFEB3B",  # Amarelo
+                    "Para Iniciar": "#F44336", # Vermelho
+                    "Suspensa": "#D32F2F"     # Vermelho Escuro
                 }
             )
             fig.update_yaxes(autorange="reversed")
+            
+            # EXPANDIR A VISÃO FUTURA DO CRONOGRAMA
+            data_maxima = df_gantt_filtrado['Data de fim'].max()
+            if pd.notna(data_maxima):
+                # Extenso a visão temporal em +6 meses para além do prazo máximo da maior obra
+                limite_futuro = data_maxima + pd.DateOffset(months=6)
+                fig.update_xaxes(range=[df_gantt_filtrado['Data de inicio'].min(), limite_futuro])
+                
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("Nenhum registo com datas válidas encontrado para os filtros selecionados.")
 
-    elif st.session_state['pagina_ativa'] == "📋 Tabela & Desenhos":
-        st.title("📋 Base de Dados & Visualizador de Desenhos")
+    elif st.session_state['pagina_ativa'] == "📋 Tabela Detalhada":
+        st.title("📋 Base de Dados Detalhada")
         
-        col_tabela, col_viewer = st.columns([1.2, 1])
-        
-        with col_tabela:
-            st.subheader("Base de Dados Detalhada")
-            st.dataframe(df_filtrado, use_container_width=True, height=500)
-            
-        with col_viewer:
-            st.subheader("📐 Visualizador Direto de Desenho")
-            
-            # Lista de desenhos para seleção
-            if 'Desenho' in df_filtrado.columns:
-                lista_desenhos = df_filtrado['Desenho'].dropna().unique().tolist()
-                desenho_sel = st.selectbox("Selecionar Desenho/Documento para Visualizar:", ["Selecione um registo..."] + lista_desenhos)
-            else:
-                desenho_sel = "Selecione um registo..."
-            
-            # Anexo e Visualizador Integrado
-            ficheiro_desenho = st.file_uploader("Ou carregue/abra o PDF do desenho diretamente aqui:", type=["pdf", "png", "jpg", "jpeg"])
-            
-            if ficheiro_desenho is not None:
-                if ficheiro_desenho.type == "application/pdf":
-                    mostrar_pdf(ficheiro_desenho.read())
-                else:
-                    st.image(ficheiro_desenho, caption=ficheiro_desenho.name, use_column_width=True)
-            elif desenho_sel != "Selecione um registo...":
-                # Verifica se existe ficheiro local no servidor (se aplicável)
-                linha_desenho = df_filtrado[df_filtrado['Desenho'] == desenho_sel]
-                caminho_potencial = str(linha_desenho['Caminho_Rede'].values[0]) if 'Caminho_Rede' in linha_desenho.columns else ""
-                
-                if os.path.exists(caminho_potencial) and caminho_potencial.lower().endswith(".pdf"):
-                    with open(caminho_potencial, "rb") as f:
-                        mostrar_pdf(f.read())
-                else:
-                    st.info(f"ℹ️ A visualizar o registo: **{desenho_sel}**\n\nCarregue o ficheiro `.pdf` correspondente acima para o visualizar diretamente na app.")
+        # GERA O LINK DE ABERTURA DIRETA NA TABELA
+        def gerar_link_abrir(caminho):
+            if pd.notna(caminho) and str(caminho).strip() != "":
+                cam_limpo = str(caminho).replace('\\', '/')
+                return f"file:///{cam_limpo}"
+            return None
+
+        df_exibicao = df_filtrado.copy()
+        df_exibicao['Abrir Ficheiro'] = df_exibicao['Caminho_Rede'].apply(gerar_link_abrir)
+
+        st.dataframe(
+            df_exibicao,
+            column_config={
+                "Abrir Ficheiro": st.column_config.LinkColumn(
+                    "Abrir",
+                    display_text="📂 Abrir Desenho",
+                    help="Clique para abrir ou aceder ao ficheiro de desenho associado"
+                )
+            },
+            use_container_width=True
+        )
+
+        with st.expander("📎 Carregar / Anexar Desenho em PDF para Análise"):
+            up_desenho = st.file_uploader("Arraste aqui um ficheiro de desenho para rápida verificação:", type=["pdf", "png", "jpg"])
+            if up_desenho is not None:
+                st.success(f"Ficheiro {up_desenho.name} pronto para consulta.")
 
     elif st.session_state['pagina_ativa'] == "📈 Ponto de Situação":
         st.title("📈 Indicadores e Ponto de Situação")
@@ -282,8 +288,8 @@ if 'df_raw' in st.session_state and st.session_state['df_raw'] is not None and s
             return df_filtrado['Situação'].astype(str).str.contains(keyword, case=False, na=False).sum()
 
         col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("Para Iniciar", contar_estado('Iniciar'))
+        col1.metric("Para Iniciar", contar_estado('Para Iniciar'))
         col2.metric("Já Iniciadas", contar_estado('Iniciada'))
-        col3.metric("Em Execução", contar_estado('Execução'))
+        col3.metric("Em Execução", contar_estado('Em Execução'))
         col4.metric("Concluídas", contar_estado('Concluída'))
         col5.metric("Suspensas", contar_estado('Suspensa'))
